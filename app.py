@@ -1938,6 +1938,23 @@ st.set_page_config(
     layout="wide",
 )
 
+# PWA: manifest + meta tag per poter "installare" l'app dal browser
+# (icona sulla home, apertura a schermo intero). I file vivono in static/
+# e Streamlit li serve su /app/static/... (richiede enableStaticServing
+# in .streamlit/config.toml).
+st.markdown(
+    """
+<link rel="manifest" href="app/static/manifest.json">
+<link rel="apple-touch-icon" href="app/static/apple-touch-icon.png">
+<meta name="theme-color" content="#1a2340">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="QuizCloud">
+""",
+    unsafe_allow_html=True,
+)
+
 st.markdown(
     """
 <style>
