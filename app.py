@@ -2058,7 +2058,46 @@ with st.sidebar:
         if st.session_state.fc_cards:
             st.write(f"**Materia FC:** {st.session_state.fc_subject}")
             st.write(f"**Mazzo:** {st.session_state.fc_file_name}")
-        
+
+        save_disabled = not cloud_ready or not (
+            (st.session_state.active_subject and st.session_state.active_session_folder)
+            or (st.session_state.fc_cards and st.session_state.fc_file_name)
+        )
+        if st.button("💾 Salva sessione", type="primary", width='stretch', disabled=save_disabled):
+            try:
+                if st.session_state.active_subject and st.session_state.active_session_folder:
+                    combined_correct, combined_wrong, combined_unanswered = current_combined_state()
+                    save_session_to_cloud(
+                        client,
+                        cloud_settings,
+                        st.session_state.active_subject,
+                        st.session_state.active_session_folder,
+                        combined_correct,
+                        combined_wrong,
+                        combined_unanswered,
+                        media_dir,
+                    )
+                    st.session_state.previous_correct = combined_correct
+                    st.session_state.previous_wrong = combined_wrong
+                    st.session_state.previous_unanswered = combined_unanswered
+                if st.session_state.fc_cards and st.session_state.fc_file_name:
+                    fc_file_stem = safe_name(Path(st.session_state.fc_file_name).stem)
+                    save_flashcard_session(
+                        client,
+                        cloud_settings,
+                        st.session_state.fc_subject,
+                        fc_file_stem,
+                        {
+                            "conosco": st.session_state.fc_conosco,
+                            "da_studiare": st.session_state.fc_da_studiare,
+                        },
+                    )
+                st.success("Sessione salvata nel cloud.")
+            except Exception as exc:
+                st.error(f"Salvataggio non riuscito: {exc}")
+        if save_disabled and cloud_ready:
+            st.caption("Apri un quiz o un mazzo flashcard per poter salvare.")
+
         if st.button("🏠 Torna alla Home", type="secondary", width='stretch'):
             clear_active_quiz_state()
             st.session_state.requested_tab = "cloud"
