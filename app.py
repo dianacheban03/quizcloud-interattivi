@@ -1052,6 +1052,57 @@ class NamedBytesIO(io.BytesIO):
         self.name = name
 
 
+def get_users_config() -> Dict[str, Dict[str, str]]:
+    """
+    Legge l'elenco utenti da secrets.toml, sezione [users.<nome>].
+    Ogni utente ha una password e una propria cartella "root" nel bucket,
+    così i dati di persone diverse non si mescolano.
+    """
+    try:
+        raw_users = st.secrets["users"]
+    except Exception:
+        return {}
+
+    users = {}
+    for username, cfg in raw_users.items():
+        users[username] = {
+            "password": str(cfg.get("password", "")),
+            "root": safe_name(str(cfg.get("root", username))),
+        }
+    return users
+
+
+def render_login_gate(users: Dict[str, Dict[str, str]]) -> bool:
+    """
+    Mostra un form di login se ci sono utenti configurati.
+    Ritorna True se l'utente è autenticato (o se non è configurato nessun
+    utente, per restare compatibile con l'uso a utente singolo).
+    """
+    if not users:
+        return True
+
+    if st.session_state.get("auth_user"):
+        return True
+
+    st.title("☁️ Quiz Cloud Interattivi")
+    st.subheader("🔐 Accedi")
+    with st.form("login_form"):
+        username = st.text_input("Nome utente")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Accedi", type="primary")
+
+    if submitted:
+        user = users.get(username)
+        if user and password and user["password"] == password:
+            st.session_state.auth_user = username
+            st.session_state.auth_root = user["root"]
+            st.rerun()
+        else:
+            st.error("Nome utente o password non corretti.")
+
+    return False
+
+
 def get_cloud_settings() -> Optional[Dict[str, str]]:
     try:
         cfg = st.secrets["cloud"]
@@ -1950,8 +2001,17 @@ work_dir = Path(st.session_state.work_dir)
 media_dir = work_dir / "media"
 media_dir.mkdir(parents=True, exist_ok=True)
 
+configured_users = get_users_config()
+if not render_login_gate(configured_users):
+    st.stop()
+
 client, cloud_settings = get_cloud_context()
 cloud_ready = client is not None and cloud_settings is not None
+
+if cloud_ready and st.session_state.get("auth_root"):
+    # Ogni utente ha la sua cartella: i dati non si mescolano tra persone diverse.
+    cloud_settings = dict(cloud_settings)
+    cloud_settings["root"] = st.session_state.auth_root
 
 st.title("☁️ Quiz Cloud Interattivi")
 st.caption(
@@ -1960,6 +2020,14 @@ st.caption(
 )
 
 with st.sidebar:
+    if st.session_state.get("auth_user"):
+        st.caption(f"👤 Accesso come **{st.session_state.auth_user}**")
+        if st.button("🚪 Esci", width='stretch'):
+            st.session_state.pop("auth_user", None)
+            st.session_state.pop("auth_root", None)
+            st.rerun()
+        st.divider()
+
     st.header("Stato cloud")
     if cloud_ready:
         try:
