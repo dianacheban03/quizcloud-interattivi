@@ -1,0 +1,87 @@
+/* CUSTOM STYLES PER QUIZ CLOUD */
+
+:root {
+    --primary-color: #2563eb;
+    --success-color: #10b981;
+    --danger-color: #ef4444;
+}
+
+/* Sidebar migliorato */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2 {
+    color: #1e293b;
+    font-weight: 700;
+}
+
+/* Card del quiz */
+.quiz-card {
+    background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+    border-left: 4px solid #667eea;
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+/* Pulsanti migliorati */
+button {
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+}
+
+button[kind="primary"] {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+    color: white !important;
+}
+
+button[kind="primary"]:hover {
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4) !important;
+}
+
+/* Alert personalizzati */
+[data-testid="stAlert"] {
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+/* Input fields */
+input, textarea, select {
+    border-radius: 6px !important;
+    border: 1px solid #d1d5db !important;
+}
+
+input:focus, textarea:focus, select:focus {
+    border-color: #667eea !important;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1) !important;
+}
+
+/* Tabella */
+thead {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+tbody tr:nth-child(even) {
+    background-color: #f8f9fc;
+}
+
+tbody tr:hover {
+    background-color: #f0f4ff;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+    }
+    
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2 {
+        color: #f1f5f9;
+    }
+}
