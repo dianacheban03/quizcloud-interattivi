@@ -1065,7 +1065,9 @@ def get_users_config() -> Dict[str, Dict[str, str]]:
 
     users = {}
     for username, cfg in raw_users.items():
-        users[username] = {
+        # Chiave normalizzata (minuscolo, senza spazi) per un confronto
+        # case-insensitive al login: "Diana" e "diana" devono funzionare uguali.
+        users[username.strip().lower()] = {
             "password": str(cfg.get("password", "")),
             "root": safe_name(str(cfg.get("root", username))),
         }
@@ -1092,9 +1094,9 @@ def render_login_gate(users: Dict[str, Dict[str, str]]) -> bool:
         submitted = st.form_submit_button("Accedi", type="primary")
 
     if submitted:
-        user = users.get(username)
-        if user and password and user["password"] == password:
-            st.session_state.auth_user = username
+        user = users.get(username.strip().lower())
+        if user and password and user["password"] == password.strip():
+            st.session_state.auth_user = username.strip()
             st.session_state.auth_root = user["root"]
             st.rerun()
         else:
