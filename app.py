@@ -2766,7 +2766,10 @@ if selected_tab == "quiz":
                             f"{q.options[q.correct_index]}"
                         )
 
-                # Azioni inline: modifica soluzione e aggiungi nota
+                # Azioni inline: modifica soluzione e aggiungi nota (solo dopo risposta)
+                if answer is None:
+                    st.divider()
+                    continue
                 with st.expander("✏️ Modifica / Nota"):
                     edit_col, note_col = st.columns(2)
                     with edit_col:
