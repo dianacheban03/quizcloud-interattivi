@@ -2771,46 +2771,68 @@ if selected_tab == "quiz":
                     st.divider()
                     continue
                 with st.expander("✏️ Modifica / Nota"):
-                    st.caption("**Modifica testo domanda**")
-                    new_question = st.text_area(
-                        "Domanda",
-                        value=q.question,
-                        key=f"edit_q_{i}",
+                    # ── Sezione nota (sempre visibile) ──
+                    st.caption("**Nota**")
+                    new_note = st.text_area(
+                        "Nota",
+                        value=q.notes,
+                        key=f"note_{i}",
+                        placeholder="Es: ricordati che... / errore comune...",
                         label_visibility="collapsed",
-                        height=80,
+                        height=100,
                     )
-                    if st.button("Salva domanda", key=f"save_q_{i}"):
-                        quiz[i].question = new_question
+                    if st.button("Salva nota", key=f"save_note_{i}"):
+                        quiz[i].notes = new_note
                         for orig_q in st.session_state.original_quiz:
                             if orig_q.number == q.number:
-                                orig_q.question = new_question
+                                orig_q.notes = new_note
                         st.rerun()
+
                     st.divider()
-                    st.caption("**Modifica risposte**")
-                    new_options = []
-                    for oi, opt in enumerate(q.options):
-                        new_options.append(st.text_input(
-                            f"{LETTERS[oi]}.",
-                            value=opt,
-                            key=f"edit_opt_{i}_{oi}",
-                        ))
-                    new_opt_text = st.text_input(
-                        "➕ Nuova risposta (lascia vuoto per non aggiungere)",
-                        value="",
-                        key=f"new_opt_{i}",
-                    )
-                    if st.button("Salva risposte", key=f"save_opts_{i}"):
-                        updated = [o for o in new_options if o.strip()]
-                        if new_opt_text.strip():
-                            updated.append(new_opt_text.strip())
-                        for target in [quiz[i]] + [oq for oq in st.session_state.original_quiz if oq.number == q.number]:
-                            target.options = updated
-                            if target.correct_index is not None and target.correct_index >= len(updated):
-                                target.correct_index = None
-                        st.rerun()
-                    st.divider()
-                    edit_col, note_col = st.columns(2)
-                    with edit_col:
+
+                    # ── Sezione modifica (espandibile con un secondo pulsante) ──
+                    if st.button("✏️ Modifica domanda / risposte", key=f"toggle_edit_{i}"):
+                        st.session_state[f"show_edit_{i}"] = not st.session_state.get(f"show_edit_{i}", False)
+
+                    if st.session_state.get(f"show_edit_{i}", False):
+                        st.caption("**Modifica testo domanda**")
+                        new_question = st.text_area(
+                            "Domanda",
+                            value=q.question,
+                            key=f"edit_q_{i}",
+                            label_visibility="collapsed",
+                            height=80,
+                        )
+                        if st.button("Salva domanda", key=f"save_q_{i}"):
+                            quiz[i].question = new_question
+                            for orig_q in st.session_state.original_quiz:
+                                if orig_q.number == q.number:
+                                    orig_q.question = new_question
+                            st.rerun()
+                        st.divider()
+                        st.caption("**Modifica risposte**")
+                        new_options = []
+                        for oi, opt in enumerate(q.options):
+                            new_options.append(st.text_input(
+                                f"{LETTERS[oi]}.",
+                                value=opt,
+                                key=f"edit_opt_{i}_{oi}",
+                            ))
+                        new_opt_text = st.text_input(
+                            "➕ Nuova risposta (lascia vuoto per non aggiungere)",
+                            value="",
+                            key=f"new_opt_{i}",
+                        )
+                        if st.button("Salva risposte", key=f"save_opts_{i}"):
+                            updated = [o for o in new_options if o.strip()]
+                            if new_opt_text.strip():
+                                updated.append(new_opt_text.strip())
+                            for target in [quiz[i]] + [oq for oq in st.session_state.original_quiz if oq.number == q.number]:
+                                target.options = updated
+                                if target.correct_index is not None and target.correct_index >= len(updated):
+                                    target.correct_index = None
+                            st.rerun()
+                        st.divider()
                         st.caption("**Modifica soluzione corretta**")
                         new_correct = st.selectbox(
                             "Risposta corretta",
@@ -2820,27 +2842,11 @@ if selected_tab == "quiz":
                             key=f"fix_correct_{i}",
                             label_visibility="collapsed",
                         )
-                        if st.button("Applica", key=f"apply_correct_{i}"):
+                        if st.button("Applica soluzione", key=f"apply_correct_{i}"):
                             quiz[i].correct_index = new_correct
                             for orig_q in st.session_state.original_quiz:
                                 if orig_q.number == q.number:
                                     orig_q.correct_index = new_correct
-                            st.rerun()
-                    with note_col:
-                        st.caption("**Aggiungi / modifica nota**")
-                        new_note = st.text_area(
-                            "Nota",
-                            value=q.notes,
-                            key=f"note_{i}",
-                            placeholder="Es: ricordati che... / errore comune...",
-                            label_visibility="collapsed",
-                            height=100,
-                        )
-                        if st.button("Salva nota", key=f"save_note_{i}"):
-                            quiz[i].notes = new_note
-                            for orig_q in st.session_state.original_quiz:
-                                if orig_q.number == q.number:
-                                    orig_q.notes = new_note
                             st.rerun()
 
                 st.divider()
