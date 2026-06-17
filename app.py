@@ -2754,6 +2754,8 @@ if selected_tab == "quiz":
                         st.warning("Soluzione non impostata.")
                     elif answer == q.correct_index:
                         st.success("✅ Risposta corretta!")
+                        if q.notes:
+                            st.info(f"📝 **Nota:** {q.notes}")
                     else:
                         st.error("❌ Risposta sbagliata.")
                         st.write(
