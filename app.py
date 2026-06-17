@@ -2552,10 +2552,7 @@ if selected_tab == "locale":
 # ------------------------------------------------------------------
 if selected_tab == "quiz":
     if not st.session_state.original_quiz:
-        st.info(
-            "Apri un file o una cartella sessione dalla scheda "
-            ""Le mie materie"."
-        )
+        st.info('Apri un file o una cartella sessione dalla scheda "Le mie materie".')
     else:
         st.subheader(
             f"{st.session_state.active_subject} · "
@@ -2610,10 +2607,7 @@ if selected_tab == "quiz":
                 st.session_state.previous_unanswered,
             )
             if not selected:
-                st.warning(
-                    f"Non ci sono domande nella modalità "
-                    f""{st.session_state.quiz_mode}"."
-                )
+                st.warning(f'Non ci sono domande nella modalità "{st.session_state.quiz_mode}".')
             else:
                 st.session_state.quiz = selected
                 st.session_state.answers = {}
