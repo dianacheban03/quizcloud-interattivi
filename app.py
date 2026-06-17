@@ -1008,6 +1008,9 @@ def combine_previous_and_current_state(
     wrong = remove_questions(wrong, correct)
     unanswered = remove_questions(unanswered, correct)
 
+    # Garantisce che nessuna domanda sia in più di una lista (priorità: correct > wrong > unanswered)
+    unanswered = remove_questions(unanswered, wrong)
+
     return correct, wrong, unanswered
 
 def select_quiz_by_mode(
@@ -1028,10 +1031,9 @@ def select_quiz_by_mode(
         return merge_unique_questions(previous_correct)
 
     if mode == "Sbagliate + non fatte":
-        return merge_unique_questions(
-            previous_wrong,
-            previous_unanswered,
-        )
+        # Rimuove da unanswered le domande già presenti in wrong (evita conteggi doppi)
+        clean_unanswered = remove_questions(previous_unanswered, previous_wrong)
+        return merge_unique_questions(previous_wrong, clean_unanswered)
 
     if mode == "Tutte":
         return merge_unique_questions(
