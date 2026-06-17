@@ -1576,8 +1576,31 @@ def current_combined_state():
 # ============================================================
 
 FLASHCARD_SEP_RE = re.compile(
-    r"^\s*(?:[-=]{3,}|[—–]{1,})\s*$"  # linee divisorie tipo --- o === o — (em dash) o – (en dash)
+    r"^\s*(?:[-=]{1,}|[—–]{1,})\s*$"  # linee divisorie: -, --, ---, ===, —, –
 )
+
+def _lookahead_is_question(current_block: Paragraph, doc, sep_re) -> bool:
+    """
+    Dato un paragrafo numerato trovato mentre siamo in stato "definition",
+    determina se è una vera nuova domanda (il prossimo testo non vuoto è un
+    separatore —) oppure un sub-item della risposta (il prossimo testo non vuoto
+    è del contenuto normale).
+    """
+    found_current = False
+    for block in iter_block_items(doc):
+        if not isinstance(block, Paragraph):
+            continue
+        if block._p is current_block._p:
+            found_current = True
+            continue
+        if not found_current:
+            continue
+        t = block.text.strip()
+        if not t:
+            continue
+        return bool(sep_re.match(t))  # True se subito dopo c'è —, altrimenti False
+    return True  # fine documento: trattala come domanda
+
 
 def parse_flashcards_from_docx(uploaded_file, out_dir: Path) -> Tuple[List[FlashCard], str]:
     """
@@ -1676,18 +1699,34 @@ def parse_flashcards_from_docx(uploaded_file, out_dir: Path) -> Tuple[List[Flash
                         state = "question"
                     continue
 
-                # Controlla se è l'inizio di una nuova domanda numerata
+                # Controlla se è l'inizio di una nuova domanda numerata.
+                # Se siamo in "definition", usiamo un lookahead per distinguere
+                # una vera nuova domanda (seguita da "—" poco dopo) da un
+                # sub-item numerato dentro la risposta (es. "1. Primo step...").
                 q_match = QUESTION_START_RE.match(line_text)
                 if q_match:
-                    flush_card()
-                    current_question.clear()
-                    current_q_imgs.clear()
-                    current_definition.clear()
-                    current_d_imgs.clear()
-                    state = "question"
-                    q_text = QUESTION_START_RE.sub("", line_fmt).strip()
-                    if q_text:
-                        current_question.append(q_text)
+                    is_real_question = True
+                    if state == "definition":
+                        # Cerca nei prossimi blocchi: se il primo non-vuoto è
+                        # un separatore, è una vera domanda; altrimenti è un
+                        # sub-item della risposta corrente.
+                        is_real_question = _lookahead_is_question(
+                            block, doc, FLASHCARD_SEP_RE
+                        )
+                    if is_real_question:
+                        flush_card()
+                        current_question.clear()
+                        current_q_imgs.clear()
+                        current_definition.clear()
+                        current_d_imgs.clear()
+                        state = "question"
+                        q_text = QUESTION_START_RE.sub("", line_fmt).strip()
+                        if q_text:
+                            current_question.append(q_text)
+                    else:
+                        # Sub-item numerato: trattalo come testo della definizione
+                        if line_fmt:
+                            current_definition.append(line_fmt)
                     continue
 
                 # Accumula testo nella sezione corrente
