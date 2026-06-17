@@ -895,7 +895,7 @@ def render_save_session_panel(quiz: List[QuizQuestion], answers: Dict[int, int],
     st.write(
         "I file scaricati includono anche lo storico delle sessioni precedenti. "
         "Contengono domande, opzioni, soluzioni e le immagini disponibili; "
-        "puoi ricaricarli direttamente nell’app per continuare."
+        "puoi ricaricarli direttamente nell'app per continuare."
     )
 
     metric_cols = st.columns(3)
@@ -2554,7 +2554,7 @@ if selected_tab == "quiz":
     if not st.session_state.original_quiz:
         st.info(
             "Apri un file o una cartella sessione dalla scheda "
-            "“Le mie materie”."
+            ""Le mie materie"."
         )
     else:
         st.subheader(
@@ -2599,7 +2599,7 @@ if selected_tab == "quiz":
             horizontal=True,
         )
 
-        launch_quiz = st.button(“▶ Avvia modalità scelta”, type=”primary”, width='stretch')
+        launch_quiz = st.button("▶ Avvia modalità scelta", type="primary", width='stretch')
 
         if launch_quiz:
             selected = select_quiz_by_mode(
@@ -2611,8 +2611,8 @@ if selected_tab == "quiz":
             )
             if not selected:
                 st.warning(
-                    f”Non ci sono domande nella modalità “
-                    f””{st.session_state.quiz_mode}”.”
+                    f"Non ci sono domande nella modalità "
+                    f""{st.session_state.quiz_mode}"."
                 )
             else:
                 st.session_state.quiz = selected
