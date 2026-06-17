@@ -704,24 +704,19 @@ def parse_saved_state_json(raw: str) -> List[QuizQuestion]:
 # SALVATAGGIO SESSIONE SU RICHIESTA
 # ============================================================
 
-def split_session_by_answers(quiz: List[QuizQuestion], answers: Dict[int, int]) -> Tuple[List[QuizQuestion], List[QuizQuestion], List[QuizQuestion]]:
+def split_session_by_answers(quiz: List[QuizQuestion], answers: Dict[str, int]) -> Tuple[List[QuizQuestion], List[QuizQuestion], List[QuizQuestion]]:
     """
-    Divide lo stato corrente in:
-    - corrette;
-    - sbagliate;
-    - non fatte.
-
-    Non salva nulla su disco: calcola tutto solo quando la pagina deve mostrare
-    la sezione "Salva sessione".
+    Divide lo stato corrente in corrette / sbagliate / non fatte.
+    answers è keyed per q.number (stringa), non per indice posizionale.
     """
     correct_items = []
     wrong_items = []
     unanswered_items = []
 
-    for i, q in enumerate(quiz):
-        if i not in answers:
+    for q in quiz:
+        if q.number not in answers:
             unanswered_items.append(q)
-        elif q.correct_index is not None and answers[i] == q.correct_index:
+        elif q.correct_index is not None and answers[q.number] == q.correct_index:
             correct_items.append(q)
         else:
             wrong_items.append(q)
@@ -2656,7 +2651,7 @@ if selected_tab == "quiz":
                             width='stretch',
                         )
 
-                _saved_answer = st.session_state.answers.get(i)
+                _saved_answer = st.session_state.answers.get(q.number)
                 if _saved_answer is not None and _saved_answer >= len(q.options):
                     _saved_answer = None
                 answer = st.radio(
@@ -2670,7 +2665,7 @@ if selected_tab == "quiz":
                 )
 
                 if answer is not None:
-                    st.session_state.answers[i] = answer
+                    st.session_state.answers[q.number] = answer
                     if q.correct_index is None:
                         st.warning("Soluzione non impostata.")
                     elif answer == q.correct_index:
@@ -2743,7 +2738,7 @@ if selected_tab == "quiz":
                                     q_number = quiz[i].number
                                     st.session_state.quiz = [q for q in quiz if q.number != q_number]
                                     st.session_state.original_quiz = [q for q in st.session_state.original_quiz if q.number != q_number]
-                                    st.session_state.answers = {k: v for k, v in st.session_state.answers.items() if k != i}
+                                    st.session_state.answers.pop(q_number, None)
                                     st.session_state.pop(f"confirm_del_{i}", None)
                                     st.rerun()
                             with c2:
