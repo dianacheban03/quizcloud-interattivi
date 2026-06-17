@@ -2,6 +2,7 @@ import io
 import os
 import re
 import json
+import time
 import base64
 import tempfile
 import hashlib
@@ -2038,6 +2039,41 @@ st.caption(
     "Le sessioni vengono aggiornate con un solo pulsante."
 )
 
+# ── Auto-save ogni 2 minuti ──────────────────────────────────────────────────
+_AUTOSAVE_INTERVAL = 120  # secondi
+if cloud_ready:
+    _now = time.time()
+    _last = st.session_state.get("last_autosave_time", 0)
+    _has_quiz = bool(st.session_state.get("active_subject") and st.session_state.get("active_session_folder"))
+    _has_fc   = bool(st.session_state.get("fc_cards") and st.session_state.get("fc_file_name"))
+    if (_has_quiz or _has_fc) and (_now - _last) >= _AUTOSAVE_INTERVAL:
+        try:
+            if _has_quiz:
+                _cc, _cw, _cu = current_combined_state()
+                save_session_to_cloud(
+                    client, cloud_settings,
+                    st.session_state.active_subject,
+                    st.session_state.active_session_folder,
+                    _cc, _cw, _cu, media_dir,
+                )
+                st.session_state.previous_correct    = _cc
+                st.session_state.previous_wrong      = _cw
+                st.session_state.previous_unanswered = _cu
+            if _has_fc:
+                save_flashcard_session(
+                    client, cloud_settings,
+                    st.session_state.fc_subject,
+                    safe_name(Path(st.session_state.fc_file_name).stem),
+                    {"conosco": st.session_state.fc_conosco,
+                     "da_studiare": st.session_state.fc_da_studiare},
+                )
+            import datetime as _dt
+            st.session_state.last_autosave_time = _now
+            st.session_state.last_autosave_label = _dt.datetime.now().strftime("%H:%M")
+        except Exception:
+            pass  # auto-save silenzioso: non interrompere l'utente in caso di errore
+# ─────────────────────────────────────────────────────────────────────────────
+
 with st.sidebar:
     if st.session_state.get("auth_user"):
         st.caption(f"👤 Accesso come **{st.session_state.auth_user}**")
@@ -2082,6 +2118,8 @@ with st.sidebar:
             (st.session_state.active_subject and st.session_state.active_session_folder)
             or (st.session_state.fc_cards and st.session_state.fc_file_name)
         )
+        if st.session_state.get("last_autosave_label"):
+            st.caption(f"💾 Ultimo salvataggio automatico: {st.session_state.last_autosave_label}")
         if st.button("💾 Salva sessione", type="primary", width='stretch', disabled=save_disabled):
             try:
                 if st.session_state.active_subject and st.session_state.active_session_folder:
