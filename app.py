@@ -2656,6 +2656,9 @@ if selected_tab == "quiz":
                             width='stretch',
                         )
 
+                _saved_answer = st.session_state.answers.get(i)
+                if _saved_answer is not None and _saved_answer >= len(q.options):
+                    _saved_answer = None
                 answer = st.radio(
                     "Scegli la risposta",
                     range(len(q.options)),
@@ -2663,7 +2666,7 @@ if selected_tab == "quiz":
                         f"{LETTERS[idx]}. {q.options[idx]}"
                     ),
                     key=f"answer_{i}",
-                    index=st.session_state.answers.get(i),
+                    index=_saved_answer,
                 )
 
                 if answer is not None:
