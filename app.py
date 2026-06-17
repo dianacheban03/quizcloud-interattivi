@@ -2727,10 +2727,6 @@ if selected_tab == "quiz":
                     unsafe_allow_html=True,
                 )
 
-                # Mostra la nota se presente
-                if q.notes:
-                    st.info(f"📝 **Nota:** {q.notes}")
-
                 st.write(q.question)
 
                 for media in q.images:
@@ -2765,6 +2761,8 @@ if selected_tab == "quiz":
                             f"{LETTERS[q.correct_index]}. "
                             f"{q.options[q.correct_index]}"
                         )
+                        if q.notes:
+                            st.info(f"📝 **Nota:** {q.notes}")
 
                 # Azioni inline: modifica soluzione e aggiungi nota (solo dopo risposta)
                 if answer is None:
