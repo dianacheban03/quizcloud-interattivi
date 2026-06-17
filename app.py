@@ -1609,14 +1609,19 @@ def _lookahead_is_question(current_block: Paragraph, doc, sep_re) -> bool:
 def parse_flashcards_from_docx(uploaded_file, out_dir: Path) -> Tuple[List[FlashCard], str]:
     """
     Legge un DOCX con flashcard nel formato:
-        1. Domanda (testo o immagine)
-        ---
-        Definizione (testo o immagine)
-        ---
-        2. Prossima domanda ...
 
-    Oppure il formato semplice (alternanza paragrafo domanda / paragrafo definizione).
-    Le immagini vengono collegate alla domanda o alla definizione in base alla posizione.
+        Domanda (testo o immagine)
+        -
+        Definizione (testo o immagine)
+
+        Prossima domanda ...
+        --
+        Definizione 2 ...
+
+    Regole:
+    - Riga vuota (paragrafo vuoto) = fine della card corrente, inizio della prossima
+    - Riga con solo "-", "--", "---" (o em/en dash) = separatore domanda/risposta
+    - Tutto il resto va accumulato nella sezione corrente (domanda o risposta)
     """
     doc = Document(uploaded_file)
     cards: List[FlashCard] = []
@@ -1628,13 +1633,12 @@ def parse_flashcards_from_docx(uploaded_file, out_dir: Path) -> Tuple[List[Flash
 
     img_counter = 1
 
-    # Stati del parser: "question" o "definition"
     current_number = 0
     current_question = []
     current_q_imgs: List[MediaItem] = []
     current_definition = []
     current_d_imgs: List[MediaItem] = []
-    state = "question"  # stiamo leggendo la domanda o la definizione?
+    state = "question"
 
     def flush_card():
         nonlocal current_number
@@ -1650,6 +1654,12 @@ def parse_flashcards_from_docx(uploaded_file, out_dir: Path) -> Tuple[List[Flash
                 d_images=list(current_d_imgs),
             ))
 
+    def reset_card():
+        current_question.clear()
+        current_q_imgs.clear()
+        current_definition.clear()
+        current_d_imgs.clear()
+
     for block in iter_block_items(doc):
         if isinstance(block, Paragraph):
             block_text = block.text.strip()
@@ -1658,24 +1668,23 @@ def parse_flashcards_from_docx(uploaded_file, out_dir: Path) -> Tuple[List[Flash
                 block, doc, out_dir, img_counter, source_prefix
             )
 
-            if block_text:
-                raw_lines.append(block_text)
+            # Riga vuota = fine card corrente
+            if not block_text and not imgs:
+                if current_question or current_q_imgs:
+                    flush_card()
+                    reset_card()
+                    state = "question"
+                continue
 
-            # Le immagini si attaccano allo stato attivo all'inizio del
-            # paragrafo, indipendentemente da separatori/domande individuati
-            # più sotto nello stesso paragrafo (vedi nota sotto).
+            raw_lines.append(block_text)
+
             for img in imgs:
                 if state == "question":
                     current_q_imgs.append(img)
                 else:
                     current_d_imgs.append(img)
 
-            # Un paragrafo Word può contenere più "righe logiche" separate da
-            # un a capo "soft" (Shift+Invio) invece che da un nuovo paragrafo:
-            # es. domanda, "---" e risposta scritte tutte di seguito nello
-            # stesso paragrafo. Le elaboriamo riga per riga così
-            # domanda/separatore/risposta vengono riconosciuti comunque,
-            # anche quando non sono andati a capo "per davvero".
+            # Un paragrafo può contenere più righe logiche (soft return Shift+Invio)
             text_lines = block_text.split("\n") if block_text else []
             fmt_lines = block_fmt.split("\n") if block_fmt else []
             while len(fmt_lines) < len(text_lines):
@@ -1689,51 +1698,11 @@ def parse_flashcards_from_docx(uploaded_file, out_dir: Path) -> Tuple[List[Flash
                 if not line_text and not line_fmt:
                     continue
 
-                # Controlla se è un separatore tra domanda e definizione
-                if FLASHCARD_SEP_RE.match(line_text) or line_text.lower() in ("---", "===", "***"):
-                    if state == "question":
-                        state = "definition"
-                    else:
-                        # Separatore tra una card e la successiva
-                        flush_card()
-                        current_question.clear()
-                        current_q_imgs.clear()
-                        current_definition.clear()
-                        current_d_imgs.clear()
-                        state = "question"
+                # Separatore domanda/risposta: -, --, ---, —, –, ===, ***
+                if FLASHCARD_SEP_RE.match(line_text):
+                    state = "definition"
                     continue
 
-                # Controlla se è l'inizio di una nuova domanda numerata.
-                # Se siamo in "definition", usiamo un lookahead per distinguere
-                # una vera nuova domanda (seguita da "—" poco dopo) da un
-                # sub-item numerato dentro la risposta (es. "1. Primo step...").
-                q_match = QUESTION_START_RE.match(line_text)
-                if q_match:
-                    is_real_question = True
-                    if state == "definition":
-                        # Cerca nei prossimi blocchi: se il primo non-vuoto è
-                        # un separatore, è una vera domanda; altrimenti è un
-                        # sub-item della risposta corrente.
-                        is_real_question = _lookahead_is_question(
-                            block, doc, FLASHCARD_SEP_RE
-                        )
-                    if is_real_question:
-                        flush_card()
-                        current_question.clear()
-                        current_q_imgs.clear()
-                        current_definition.clear()
-                        current_d_imgs.clear()
-                        state = "question"
-                        q_text = QUESTION_START_RE.sub("", line_fmt).strip()
-                        if q_text:
-                            current_question.append(q_text)
-                    else:
-                        # Sub-item numerato: trattalo come testo della definizione
-                        if line_fmt:
-                            current_definition.append(line_fmt)
-                    continue
-
-                # Accumula testo nella sezione corrente
                 if state == "question":
                     if line_fmt:
                         current_question.append(line_fmt)
@@ -2055,6 +2024,7 @@ defaults = {
     "fc_prove_risposte": {},     # {card_index: str} risposte scritte
     "quiz_random_order": False,  # Ordine casuale per quiz
     "fc_random_order": False,    # Ordine casuale per flashcard
+    "fc_shuffled_order": [],     # Ordine casuale stabile (numeri carte)
 }
 for key, value in defaults.items():
     if key not in st.session_state:
@@ -2906,7 +2876,21 @@ def fc_render_study_session():
     with filter_col:
         fc_filter_val = st.radio("Mostra", ["Tutte", "Non viste", "Da studiare", "Conosco"], horizontal=True, key="fc_filter_radio")
     with random_col:
-        st.session_state.fc_random_order = st.checkbox("🔀 Casuale", value=False, help="Mostra le carte in ordine casuale.")
+        new_random = st.checkbox("🔀 Casuale", value=st.session_state.fc_random_order, help="Mostra le carte in ordine casuale.")
+        if new_random != st.session_state.fc_random_order:
+            st.session_state.fc_random_order = new_random
+            if new_random:
+                shuffled = all_cards.copy()
+                random.shuffle(shuffled)
+                st.session_state.fc_shuffled_order = [c.number for c in shuffled]
+            else:
+                st.session_state.fc_shuffled_order = []
+
+    if st.session_state.fc_random_order and st.session_state.get("fc_shuffled_order"):
+        order_map = {n: i for i, n in enumerate(st.session_state.fc_shuffled_order)}
+        ordered_cards = sorted(all_cards, key=lambda c: order_map.get(c.number, 9999))
+    else:
+        ordered_cards = all_cards
 
     def fc_filter(card: FlashCard) -> bool:
         if fc_filter_val == "Tutte": return True
@@ -2915,7 +2899,7 @@ def fc_render_study_session():
         if fc_filter_val == "Non viste": return card.number not in conosco_set and card.number not in da_studiare_set
         return True
 
-    visible_cards = [c for c in all_cards if fc_filter(c)]
+    visible_cards = [c for c in ordered_cards if fc_filter(c)]
 
     if not visible_cards:
         st.info("Nessuna carta corrisponde al filtro selezionato.")
@@ -2924,7 +2908,7 @@ def fc_render_study_session():
         is_study = fc_mode.startswith("🔍")
 
         for idx, card in enumerate(visible_cards):
-            card_key = f"fc_{card.number}_{idx}"
+            card_key = f"fc_{card.number}"
             is_flipped = st.session_state.fc_flipped.get(card_key, False)
 
             if card.number in conosco_set:
@@ -2964,13 +2948,11 @@ def fc_render_study_session():
                         if st.button("✅ Conosco", key=f"fc_know_{card_key}", width='stretch'):
                             st.session_state.fc_conosco = list((set(st.session_state.fc_conosco) | {card.number}) - da_studiare_set)
                             st.session_state.fc_da_studiare = [n for n in st.session_state.fc_da_studiare if n != card.number]
-                            st.session_state.fc_flipped[card_key] = False
                             st.rerun()
                     with bc2:
                         if st.button("📖 Da studiare", key=f"fc_study_{card_key}", width='stretch'):
                             st.session_state.fc_da_studiare = list((set(st.session_state.fc_da_studiare) | {card.number}) - conosco_set)
                             st.session_state.fc_conosco = [n for n in st.session_state.fc_conosco if n != card.number]
-                            st.session_state.fc_flipped[card_key] = False
                             st.rerun()
             else:
                 st.markdown("---")
@@ -2994,13 +2976,11 @@ def fc_render_study_session():
                         if st.button("✅ Sapevo", key=f"fc_pt_know_{card_key}", width='stretch'):
                             st.session_state.fc_conosco = list((set(st.session_state.fc_conosco) | {card.number}) - da_studiare_set)
                             st.session_state.fc_da_studiare = [n for n in st.session_state.fc_da_studiare if n != card.number]
-                            st.session_state.fc_flipped[card_key] = False
                             st.rerun()
                     with pt2:
                         if st.button("📖 Da rivedere", key=f"fc_pt_study_{card_key}", width='stretch'):
                             st.session_state.fc_da_studiare = list((set(st.session_state.fc_da_studiare) | {card.number}) - conosco_set)
                             st.session_state.fc_conosco = [n for n in st.session_state.fc_conosco if n != card.number]
-                            st.session_state.fc_flipped[card_key] = False
                             st.rerun()
                     with pt3:
                         if st.button("🔄 Riprova", key=f"fc_pt_retry_{card_key}", width='stretch'):
