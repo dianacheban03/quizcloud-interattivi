@@ -1575,7 +1575,7 @@ def current_combined_state():
 # ============================================================
 
 FLASHCARD_SEP_RE = re.compile(
-    r"^\s*[-=]{3,}\s*$"  # linee divisorie tipo --- o ===
+    r"^\s*(?:[-=]{3,}|[—–]{1,})\s*$"  # linee divisorie tipo --- o === o — (em dash) o – (en dash)
 )
 
 def parse_flashcards_from_docx(uploaded_file, out_dir: Path) -> Tuple[List[FlashCard], str]:
