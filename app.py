@@ -2599,18 +2599,7 @@ if selected_tab == "quiz":
             horizontal=True,
         )
 
-        launch_col, review_col = st.columns([2, 1])
-        with launch_col:
-            launch_quiz = st.button(
-                "▶ Avvia modalità scelta",
-                type="primary",
-                width='stretch',
-            )
-        with review_col:
-            review_first = st.checkbox(
-                "Controlla domande prima di iniziare",
-                value=False,
-            )
+        launch_quiz = st.button(“▶ Avvia modalità scelta”, type=”primary”, width='stretch')
 
         if launch_quiz:
             selected = select_quiz_by_mode(
@@ -2622,83 +2611,18 @@ if selected_tab == "quiz":
             )
             if not selected:
                 st.warning(
-                    f"Non ci sono domande nella modalità "
-                    f"“{st.session_state.quiz_mode}”."
+                    f”Non ci sono domande nella modalità “
+                    f””{st.session_state.quiz_mode}”.”
                 )
             else:
                 st.session_state.quiz = selected
                 st.session_state.answers = {}
-                st.session_state.editing_done = not review_first
+                st.session_state.editing_done = True
                 st.rerun()
 
         quiz: List[QuizQuestion] = st.session_state.quiz
 
-        if quiz and not st.session_state.editing_done:
-            st.divider()
-            st.header("Revisione del quiz")
-            st.caption(
-                "Modifica solo ciò che è stato riconosciuto male. "
-                "Le immagini restano collegate alle domande."
-            )
-
-            for i, q in enumerate(quiz):
-                with st.expander(
-                    f"Domanda {i + 1} · originale {q.number}",
-                    expanded=i == 0,
-                ):
-                    q.question = st.text_area(
-                        "Testo domanda",
-                        q.question,
-                        key=f"edit_question_{i}",
-                    )
-
-                    updated_options = []
-                    for j, option in enumerate(q.options):
-                        updated_options.append(
-                            st.text_input(
-                                f"Opzione {LETTERS[j]}",
-                                option,
-                                key=f"edit_option_{i}_{j}",
-                            )
-                        )
-                    q.options = updated_options
-
-                    current_idx = (
-                        q.correct_index
-                        if q.correct_index is not None
-                        and q.correct_index < len(q.options)
-                        else 0
-                    )
-                    q.correct_index = st.selectbox(
-                        "Soluzione",
-                        range(len(q.options)),
-                        index=current_idx,
-                        format_func=lambda idx, q=q: (
-                            f"{LETTERS[idx]}. {q.options[idx][:100]}"
-                        ),
-                        key=f"edit_correct_{i}",
-                    )
-
-                    for media in q.images:
-                        img_path = media_dir / media.file_name
-                        if img_path.exists():
-                            st.image(
-                                str(img_path),
-                                caption=media.page_or_section,
-                                width='stretch',
-                            )
-
-            if st.button(
-                "Conferma e inizia",
-                type="primary",
-                width='stretch',
-            ):
-                st.session_state.quiz = quiz
-                st.session_state.answers = {}
-                st.session_state.editing_done = True
-                st.rerun()
-
-        elif quiz and st.session_state.editing_done:
+        if quiz and st.session_state.editing_done:
             current_correct, current_wrong, current_unanswered = (
                 split_session_by_answers(
                     quiz, st.session_state.answers
