@@ -2769,6 +2769,21 @@ if selected_tab == "quiz":
                     st.divider()
                     continue
                 with st.expander("✏️ Modifica / Nota"):
+                    st.caption("**Modifica testo domanda**")
+                    new_question = st.text_area(
+                        "Domanda",
+                        value=q.question,
+                        key=f"edit_q_{i}",
+                        label_visibility="collapsed",
+                        height=80,
+                    )
+                    if st.button("Salva domanda", key=f"save_q_{i}"):
+                        quiz[i].question = new_question
+                        for orig_q in st.session_state.original_quiz:
+                            if orig_q.number == q.number:
+                                orig_q.question = new_question
+                        st.rerun()
+                    st.divider()
                     edit_col, note_col = st.columns(2)
                     with edit_col:
                         st.caption("**Modifica soluzione corretta**")
