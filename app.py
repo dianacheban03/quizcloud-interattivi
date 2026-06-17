@@ -2738,6 +2738,9 @@ if selected_tab == "quiz":
                                     q_number = quiz[i].number
                                     st.session_state.quiz = [q for q in quiz if q.number != q_number]
                                     st.session_state.original_quiz = [q for q in st.session_state.original_quiz if q.number != q_number]
+                                    st.session_state.previous_correct = [q for q in st.session_state.previous_correct if q.number != q_number]
+                                    st.session_state.previous_wrong = [q for q in st.session_state.previous_wrong if q.number != q_number]
+                                    st.session_state.previous_unanswered = [q for q in st.session_state.previous_unanswered if q.number != q_number]
                                     st.session_state.answers.pop(q_number, None)
                                     st.session_state.pop(f"confirm_del_{i}", None)
                                     st.rerun()
