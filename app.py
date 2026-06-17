@@ -2803,12 +2803,32 @@ if selected_tab == "quiz":
                             label_visibility="collapsed",
                             height=80,
                         )
-                        if st.button("Salva domanda", key=f"save_q_{i}"):
-                            quiz[i].question = new_question
-                            for orig_q in st.session_state.original_quiz:
-                                if orig_q.number == q.number:
-                                    orig_q.question = new_question
-                            st.rerun()
+                        save_col, del_col = st.columns([3, 1])
+                        with save_col:
+                            if st.button("Salva domanda", key=f"save_q_{i}"):
+                                quiz[i].question = new_question
+                                for orig_q in st.session_state.original_quiz:
+                                    if orig_q.number == q.number:
+                                        orig_q.question = new_question
+                                st.rerun()
+                        with del_col:
+                            if st.button("🗑️ Elimina", key=f"del_q_{i}", type="secondary"):
+                                st.session_state[f"confirm_del_{i}"] = True
+                        if st.session_state.get(f"confirm_del_{i}", False):
+                            st.warning("Sicura di voler eliminare questa domanda?")
+                            c1, c2 = st.columns(2)
+                            with c1:
+                                if st.button("Sì, elimina", key=f"confirm_del_yes_{i}", type="primary"):
+                                    q_number = quiz[i].number
+                                    st.session_state.quiz = [q for q in quiz if q.number != q_number]
+                                    st.session_state.original_quiz = [q for q in st.session_state.original_quiz if q.number != q_number]
+                                    st.session_state.answers = {k: v for k, v in st.session_state.answers.items() if k != i}
+                                    st.session_state.pop(f"confirm_del_{i}", None)
+                                    st.rerun()
+                            with c2:
+                                if st.button("Annulla", key=f"confirm_del_no_{i}"):
+                                    st.session_state.pop(f"confirm_del_{i}", None)
+                                    st.rerun()
                         st.divider()
                         st.caption("**Modifica risposte**")
                         new_options = []
