@@ -2784,6 +2784,29 @@ if selected_tab == "quiz":
                                 orig_q.question = new_question
                         st.rerun()
                     st.divider()
+                    st.caption("**Modifica risposte**")
+                    new_options = []
+                    for oi, opt in enumerate(q.options):
+                        new_options.append(st.text_input(
+                            f"{LETTERS[oi]}.",
+                            value=opt,
+                            key=f"edit_opt_{i}_{oi}",
+                        ))
+                    new_opt_text = st.text_input(
+                        "➕ Nuova risposta (lascia vuoto per non aggiungere)",
+                        value="",
+                        key=f"new_opt_{i}",
+                    )
+                    if st.button("Salva risposte", key=f"save_opts_{i}"):
+                        updated = [o for o in new_options if o.strip()]
+                        if new_opt_text.strip():
+                            updated.append(new_opt_text.strip())
+                        for target in [quiz[i]] + [oq for oq in st.session_state.original_quiz if oq.number == q.number]:
+                            target.options = updated
+                            if target.correct_index is not None and target.correct_index >= len(updated):
+                                target.correct_index = None
+                        st.rerun()
+                    st.divider()
                     edit_col, note_col = st.columns(2)
                     with edit_col:
                         st.caption("**Modifica soluzione corretta**")
@@ -2797,7 +2820,6 @@ if selected_tab == "quiz":
                         )
                         if st.button("Applica", key=f"apply_correct_{i}"):
                             quiz[i].correct_index = new_correct
-                            # Aggiorna anche original_quiz se la domanda è presente
                             for orig_q in st.session_state.original_quiz:
                                 if orig_q.number == q.number:
                                     orig_q.correct_index = new_correct
