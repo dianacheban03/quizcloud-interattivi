@@ -2755,7 +2755,7 @@ if selected_tab == "quiz":
                     elif answer == q.correct_index:
                         st.success("✅ Risposta corretta!")
                         if q.notes:
-                            st.info(f"📝 **Nota:** {q.notes}")
+                            st.info("📝 **Nota:**\n\n" + q.notes.replace("\n", "  \n"))
                     else:
                         st.error("❌ Risposta sbagliata.")
                         st.write(
@@ -2764,7 +2764,7 @@ if selected_tab == "quiz":
                             f"{q.options[q.correct_index]}"
                         )
                         if q.notes:
-                            st.info(f"📝 **Nota:** {q.notes}")
+                            st.info("📝 **Nota:**\n\n" + q.notes.replace("\n", "  \n"))
 
                 # Azioni inline: modifica soluzione e aggiungi nota (solo dopo risposta)
                 if answer is None:
