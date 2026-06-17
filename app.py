@@ -67,6 +67,7 @@ class QuizQuestion:
     options: List[str]
     correct_index: Optional[int] = None
     images: List[MediaItem] = None
+    notes: str = ""  # commento/nota dell'utente sulla domanda
 
     def __post_init__(self):
         if self.images is None:
@@ -566,7 +567,9 @@ def parse_docx_quiz_direct(uploaded_file, out_dir: Path) -> Tuple[List[QuizQuest
                     current_option_index = len(current.options) - 1
 
                 elif current is not None:
-                    if current_option_index is not None and current.options:
+                    if block_text.startswith("[NOTA]:"):
+                        current.notes = block_text[len("[NOTA]:"):].strip()
+                    elif current_option_index is not None and current.options:
                         current.options[current_option_index] += " " + block_text
                     else:
                         current.question += " " + block_text
@@ -617,6 +620,7 @@ def quiz_from_json(raw: str) -> List[QuizQuestion]:
                 options=item.get("options", []),
                 correct_index=item.get("correct_index", None),
                 images=images,
+                notes=item.get("notes", ""),
             )
         )
     return quiz
@@ -819,6 +823,9 @@ def quiz_docx_with_solutions(
             document.add_paragraph(
                 f"{LETTERS[option_index]}. {option}"
             )
+
+        if q.notes:
+            document.add_paragraph(f"[NOTA]: {q.notes}")
 
         document.add_paragraph("")
 
@@ -2719,6 +2726,11 @@ if selected_tab == "quiz":
                     f'Domanda {i + 1}</strong></div>',
                     unsafe_allow_html=True,
                 )
+
+                # Mostra la nota se presente
+                if q.notes:
+                    st.info(f"📝 **Nota:** {q.notes}")
+
                 st.write(q.question)
 
                 for media in q.images:
@@ -2753,6 +2765,43 @@ if selected_tab == "quiz":
                             f"{LETTERS[q.correct_index]}. "
                             f"{q.options[q.correct_index]}"
                         )
+
+                # Azioni inline: modifica soluzione e aggiungi nota
+                with st.expander("✏️ Modifica / Nota"):
+                    edit_col, note_col = st.columns(2)
+                    with edit_col:
+                        st.caption("**Modifica soluzione corretta**")
+                        new_correct = st.selectbox(
+                            "Risposta corretta",
+                            range(len(q.options)),
+                            index=q.correct_index if q.correct_index is not None else 0,
+                            format_func=lambda idx, q=q: f"{LETTERS[idx]}. {q.options[idx][:60]}",
+                            key=f"fix_correct_{i}",
+                            label_visibility="collapsed",
+                        )
+                        if st.button("Applica", key=f"apply_correct_{i}"):
+                            quiz[i].correct_index = new_correct
+                            # Aggiorna anche original_quiz se la domanda è presente
+                            for orig_q in st.session_state.original_quiz:
+                                if orig_q.number == q.number:
+                                    orig_q.correct_index = new_correct
+                            st.rerun()
+                    with note_col:
+                        st.caption("**Aggiungi / modifica nota**")
+                        new_note = st.text_area(
+                            "Nota",
+                            value=q.notes,
+                            key=f"note_{i}",
+                            placeholder="Es: ricordati che... / errore comune...",
+                            label_visibility="collapsed",
+                            height=100,
+                        )
+                        if st.button("Salva nota", key=f"save_note_{i}"):
+                            quiz[i].notes = new_note
+                            for orig_q in st.session_state.original_quiz:
+                                if orig_q.number == q.number:
+                                    orig_q.notes = new_note
+                            st.rerun()
 
                 st.divider()
 
