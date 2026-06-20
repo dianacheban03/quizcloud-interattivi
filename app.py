@@ -360,16 +360,20 @@ def parse_answer_key(text: str) -> Dict[str, int]:
     """
     answer_key = {}
 
-    # Dai più peso alla parte finale del documento.
+    # Cerca la sezione soluzioni: "Soluzioni" ha priorità su tutto.
+    # Non usare max() perché "risposte" può comparire in note finali
+    # DOPO la sezione soluzioni vera, facendo partire la ricerca dal posto sbagliato.
     lowered = text.lower()
-    start_candidates = [
-        lowered.rfind("soluzioni"),
-        lowered.rfind("risposte"),
-        lowered.rfind("answer key"),
-        lowered.rfind("answers"),
-        lowered.rfind("correzione"),
-    ]
-    start = max(start_candidates)
+    start = lowered.rfind("soluzioni")
+    if start == -1:
+        start = lowered.rfind("soluzione")
+    if start == -1:
+        # Fallback: altri termini, ma solo se non si trova "soluzioni"
+        for kw in ("answer key", "answers", "correzione", "risposte"):
+            pos = lowered.rfind(kw)
+            if pos != -1:
+                start = pos
+                break
 
     search_area = text[start:] if start != -1 else text[-4000:]
 
