@@ -1040,12 +1040,7 @@ def select_quiz_by_mode(
         return merge_unique_questions(previous_wrong, clean_unanswered)
 
     if mode == "Tutte":
-        return merge_unique_questions(
-            previous_correct,
-            previous_wrong,
-            previous_unanswered,
-            original_quiz,
-        )
+        return list(original_quiz)
 
     return merge_unique_questions(previous_unanswered)
 
