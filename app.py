@@ -3438,23 +3438,20 @@ if selected_tab == "flashcard":
 
 if st.checkbox("Mostra DEBUG - Cloud"):
     st.warning("MODALITA DEBUG ATTIVA")
-    
-    try:
+    if cloud_settings:
         st.write("Cloud config:")
-        st.write(f"- Bucket: {st.secrets['cloud']['bucket']}")
-        st.write(f"- Root: {st.secrets['cloud']['root']}")
-        st.write(f"- URL: {st.secrets['cloud']['supabase_url'][:40]}...")
-        
+        st.write(f"- Bucket: {cloud_settings['bucket']}")
+        st.write(f"- Root: {cloud_settings['root']}")
+        st.write(f"- URL: {cloud_settings['url'][:40]}...")
         st.write("Cloud status:", "OK" if cloud_ready else "Non configurato")
-        
         if cloud_ready:
             try:
-                files = client.storage.from_(st.secrets['cloud']['bucket']).list(st.secrets['cloud']['root'])
+                files = client.storage.from_(cloud_settings["bucket"]).list(cloud_settings["root"])
                 st.write(f"File nel cloud: {len(files) if files else 0}")
             except Exception as e:
                 st.error(f"Errore nel leggere i file: {e}")
-    except Exception as e:
-        st.error(f"Errore nel caricamento config: {e}")
+    else:
+        st.error("Cloud non configurato (secrets mancanti).")
 
 # ------------------------------------------------------------------
 # DA RIVEDERE
