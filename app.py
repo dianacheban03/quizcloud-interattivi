@@ -1218,6 +1218,53 @@ def cloud_download_bytes(client, bucket: str, path: str) -> bytes:
     return bytes(data)
 
 
+_DA_RIVEDERE_FILE = "da_rivedere.json"
+
+
+def load_da_rivedere(client, settings: Dict[str, str]) -> List[Dict]:
+    """Scarica la lista globale 'Da rivedere' dal cloud. Restituisce lista vuota se non esiste."""
+    try:
+        path = cloud_path(settings["root"], _DA_RIVEDERE_FILE)
+        data = cloud_download_bytes(client, settings["bucket"], path)
+        return json.loads(data.decode("utf-8"))
+    except Exception:
+        return []
+
+
+def save_da_rivedere(client, settings: Dict[str, str], items: List[Dict]):
+    path = cloud_path(settings["root"], _DA_RIVEDERE_FILE)
+    cloud_upload_bytes(
+        client,
+        settings["bucket"],
+        path,
+        json.dumps(items, ensure_ascii=False, indent=2).encode("utf-8"),
+        "application/json",
+    )
+
+
+def add_to_da_rivedere(client, settings: Dict[str, str], q: "QuizQuestion",
+                       subject: str, source_file: str):
+    """Aggiunge una domanda alla lista 'Da rivedere', evitando duplicati."""
+    import datetime
+    items = load_da_rivedere(client, settings)
+    # Chiave univoca: hash del testo della domanda
+    key = stable_question_key(q)
+    if any(item.get("_key") == key for item in items):
+        return False  # già presente
+    items.append({
+        "_key": key,
+        "question": q.question,
+        "options": q.options,
+        "correct_index": q.correct_index,
+        "notes": q.notes or "",
+        "subject": subject,
+        "source_file": source_file,
+        "ts": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+    })
+    save_da_rivedere(client, settings, items)
+    return True
+
+
 def create_subject_folder(client, settings: Dict[str, str], subject: str):
     subject = safe_name(subject)
     if not subject:
@@ -1542,6 +1589,7 @@ def start_original_quiz(
     st.session_state.active_session_folder = make_session_folder_name(quiz_name)
     st.session_state.loaded_from_session = False
     st.session_state.quiz_mode = "Tutte"
+    st.session_state.pop("dr_keys_loaded", None)  # forza ricarica cache "Da rivedere"
 
 
 def start_saved_session(
@@ -1859,13 +1907,24 @@ def delete_flashcard_file(client, settings, subject, file_name):
 
 
 def load_flashcard_session(client, settings, subject, file_stem) -> dict:
-    """Carica lo stato sessione flashcard (note e conosco/da_studiare)."""
+    """Carica lo stato sessione flashcard (conosco/da_studiare + correzioni utente)."""
     path = cloud_path(settings["root"], subject, "flashcard", f"{file_stem}_stato.json")
     try:
         data = cloud_download_bytes(client, settings["bucket"], path)
         return json.loads(data)
     except Exception:
-        return {"conosco": [], "da_studiare": []}
+        return {"conosco": [], "da_studiare": [], "correzioni": {}}
+
+
+def _apply_correzioni(cards: list, correzioni: dict):
+    """Riapplica le correzioni utente alle carte in memoria."""
+    for card in cards:
+        c = correzioni.get(str(card.number))
+        if c:
+            if "q" in c:
+                card.question = c["q"]
+            if "d" in c:
+                card.definition = c["d"]
 
 
 def save_flashcard_session(client, settings, subject, file_stem, stato: dict):
@@ -2025,6 +2084,8 @@ defaults = {
     "quiz_random_order": False,  # Ordine casuale per quiz
     "fc_random_order": False,    # Ordine casuale per flashcard
     "fc_shuffled_order": [],     # Ordine casuale stabile (numeri carte)
+    "fc_edit_card_num": None,    # Numero carta selezionata per modifica
+    "fc_correzioni": {},         # {card_number_str: {q, d, tipo, note, ts}}
 }
 for key, value in defaults.items():
     if key not in st.session_state:
@@ -2078,7 +2139,8 @@ if cloud_ready:
                     st.session_state.fc_subject,
                     safe_name(Path(st.session_state.fc_file_name).stem),
                     {"conosco": st.session_state.fc_conosco,
-                     "da_studiare": st.session_state.fc_da_studiare},
+                     "da_studiare": st.session_state.fc_da_studiare,
+                     "correzioni": st.session_state.get("fc_correzioni", {})},
                 )
             import datetime as _dt
             st.session_state.last_autosave_time = _now
@@ -2126,6 +2188,101 @@ with st.sidebar:
         if st.session_state.fc_cards:
             st.write(f"**Materia FC:** {st.session_state.fc_subject}")
             st.write(f"**Mazzo:** {st.session_state.fc_file_name}")
+            st.divider()
+            # ── Pannello modifica flashcard ──────────────────────────────
+            with st.expander("✏️ Correggi una flashcard", expanded=False):
+                fc_all: List[FlashCard] = st.session_state.fc_cards
+                options_map = {
+                    c.number: f"#{c.number} — {(c.question or '(senza testo)')[:45]}"
+                    for c in fc_all
+                }
+                selected_num = st.selectbox(
+                    "Seleziona carta",
+                    options=list(options_map.keys()),
+                    format_func=lambda n: options_map[n],
+                    key="fc_edit_selectbox",
+                )
+                target_card = next((c for c in fc_all if c.number == selected_num), None)
+                if target_card:
+                    q_edit = st.text_area(
+                        "Domanda",
+                        value=target_card.question or "",
+                        height=120,
+                        key=f"fc_edit_q_{selected_num}",
+                    )
+                    d_edit = st.text_area(
+                        "Risposta",
+                        value=target_card.definition or "",
+                        height=120,
+                        key=f"fc_edit_d_{selected_num}",
+                    )
+                    tipo_scelta = st.radio(
+                        "Tipo di correzione",
+                        ["Testo domanda/risposta", "Unisci con carta precedente",
+                         "Separa in due carte", "Altro"],
+                        key="fc_edit_tipo",
+                    )
+                    note_edit = st.text_area(
+                        "Note aggiuntive (opzionale)",
+                        height=60,
+                        key="fc_edit_note",
+                        placeholder="es. 'la risposta doveva iniziare dopo la seconda riga'",
+                    )
+                    col_save, col_flag = st.columns(2)
+                    with col_save:
+                        if st.button("💾 Salva modifica", key="fc_edit_save", width='stretch'):
+                            import datetime
+                            q_changed = q_edit.strip() != (target_card.question or "").strip()
+                            d_changed = d_edit.strip() != (target_card.definition or "").strip()
+                            if q_changed or d_changed or tipo_scelta != "Testo domanda/risposta":
+                                # Aggiorna la carta in memoria
+                                target_card.question = q_edit.strip()
+                                target_card.definition = d_edit.strip()
+                                # Aggiorna fc_correzioni in session state
+                                ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                                st.session_state.fc_correzioni[str(target_card.number)] = {
+                                    "q": q_edit.strip(),
+                                    "d": d_edit.strip(),
+                                    "tipo": tipo_scelta,
+                                    "note": note_edit.strip(),
+                                    "ts": ts,
+                                }
+                                # Salva immediatamente nel cloud se disponibile
+                                if cloud_ready and st.session_state.get("fc_file_name"):
+                                    try:
+                                        _stem = safe_name(Path(st.session_state.fc_file_name).stem)
+                                        save_flashcard_session(
+                                            client, cloud_settings,
+                                            st.session_state.fc_subject, _stem,
+                                            {"conosco": st.session_state.fc_conosco,
+                                             "da_studiare": st.session_state.fc_da_studiare,
+                                             "correzioni": st.session_state.fc_correzioni},
+                                        )
+                                        cloud_msg = " · ☁️ sincronizzato"
+                                    except Exception:
+                                        cloud_msg = " · ⚠️ cloud non raggiunto"
+                                else:
+                                    cloud_msg = ""
+                                # Log nel file report locale
+                                rp = fc_log_correction(
+                                    tipo_scelta, target_card,
+                                    q_edit.strip(), d_edit.strip(), note_edit
+                                )
+                                st.success(f"✅ Salvato{cloud_msg}")
+                                st.rerun()
+                            else:
+                                st.info("Nessuna modifica rilevata.")
+                    with col_flag:
+                        if st.button("🚩 Segnala senza modificare", key="fc_edit_flag", width='stretch'):
+                            rp = fc_log_correction(
+                                f"SEGNALAZIONE — {tipo_scelta}",
+                                target_card,
+                                target_card.question or "",
+                                target_card.definition or "",
+                                note_edit or "(nessuna nota)",
+                            )
+                            st.success(f"Segnalato in {rp.name}")
+            # ─────────────────────────────────────────────────────────────
 
         save_disabled = not cloud_ready or not (
             (st.session_state.active_subject and st.session_state.active_session_folder)
@@ -2160,6 +2317,7 @@ with st.sidebar:
                         {
                             "conosco": st.session_state.fc_conosco,
                             "da_studiare": st.session_state.fc_da_studiare,
+                            "correzioni": st.session_state.get("fc_correzioni", {}),
                         },
                     )
                 st.success("Sessione salvata nel cloud.")
@@ -2193,6 +2351,7 @@ TAB_OPTIONS = {
     "quiz": "📝 Quiz interattivo",
     "locale": "📤 Importazione locale",
     "flashcard": "🃏 Flashcard",
+    "da_rivedere": "📌 Da rivedere",
 }
 _tab_keys = list(TAB_OPTIONS.keys())
 
@@ -2446,15 +2605,18 @@ Il numero con il punto è obbligatorio. Il `---` su una riga da sola separa doma
                                         cards = flashcards_from_json(raw)
                                     else:
                                         cards, _ = load_flashcard_from_cloud(client, cloud_settings, selected_subject, cf_name, media_dir)
+                                    file_stem = safe_name(Path(cf_name).stem)
+                                    stato = load_flashcard_session(client, cloud_settings, selected_subject, file_stem)
+                                    correzioni = stato.get("correzioni", {})
+                                    _apply_correzioni(cards, correzioni)
                                     st.session_state.fc_cards = cards
                                     st.session_state.fc_file_name = cf_name
                                     st.session_state.fc_subject = selected_subject
                                     st.session_state.fc_flipped = {}
                                     st.session_state.fc_prove_risposte = {}
-                                    file_stem = safe_name(Path(cf_name).stem)
-                                    stato = load_flashcard_session(client, cloud_settings, selected_subject, file_stem)
                                     st.session_state.fc_conosco = stato.get("conosco", [])
                                     st.session_state.fc_da_studiare = stato.get("da_studiare", [])
+                                    st.session_state.fc_correzioni = correzioni
                                     st.session_state.requested_tab = "flashcard"
                                     st.success(f"Caricate {len(cards)} flashcard.")
                                     st.rerun()
@@ -2605,12 +2767,40 @@ if selected_tab == "quiz":
 
             st.divider()
 
+            # Carica una volta sola le chiavi già salvate in "Da rivedere"
+            if "dr_keys_cache" not in st.session_state:
+                st.session_state.dr_keys_cache = set()
+            if cloud_ready and "dr_keys_loaded" not in st.session_state:
+                try:
+                    _dr_items = load_da_rivedere(client, cloud_settings)
+                    st.session_state.dr_keys_cache = {item["_key"] for item in _dr_items}
+                except Exception:
+                    pass
+                st.session_state.dr_keys_loaded = True
+
             for i, q in enumerate(quiz):
-                st.markdown(
-                    f'<div class="quiz-card"><strong>'
-                    f'Domanda {i + 1}</strong></div>',
-                    unsafe_allow_html=True,
-                )
+                _q_key = stable_question_key(q)
+                _already_saved = _q_key in st.session_state.dr_keys_cache
+
+                _hdr_col, _pin_col = st.columns([10, 1])
+                with _hdr_col:
+                    st.markdown(
+                        f'<div class="quiz-card"><strong>'
+                        f'Domanda {i + 1}</strong></div>',
+                        unsafe_allow_html=True,
+                    )
+                with _pin_col:
+                    _pin_label = "📌" if _already_saved else "☆"
+                    _pin_help = "Già in 'Da rivedere'" if _already_saved else "Aggiungi a 'Da rivedere'"
+                    if st.button(_pin_label, key=f"pin_{i}", help=_pin_help,
+                                 disabled=_already_saved or not cloud_ready):
+                        _subject_now = st.session_state.get("selected_subject", "")
+                        _file_now = st.session_state.get("selected_quiz_name", "")
+                        _added = add_to_da_rivedere(client, cloud_settings, q, _subject_now, _file_now)
+                        if _added:
+                            st.session_state.dr_keys_cache.add(_q_key)
+                            st.toast("📌 Aggiunta a 'Da rivedere'")
+                        st.rerun()
 
                 st.write(q.question)
 
@@ -2854,6 +3044,40 @@ def fc_clear_active():
     st.session_state.fc_prove_risposte = {}
 
 
+def fc_log_correction(tipo: str, card: "FlashCard", q_new: str, d_new: str, note: str):
+    """Scrive una riga di correzione nel file report accanto all'app."""
+    import datetime
+    report_path = Path(__file__).parent / "flashcard_correzioni.txt"
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    file_name = st.session_state.get("fc_file_name", "?")
+    sep = "=" * 60
+    lines = [
+        sep,
+        f"Data:    {ts}",
+        f"File:    {file_name}",
+        f"Carta:   #{card.number}",
+        f"Tipo:    {tipo}",
+        "",
+        "--- DOMANDA ORIGINALE ---",
+        card.question or "(vuota)",
+        "",
+        "--- DOMANDA CORRETTA ---",
+        q_new or "(vuota)",
+        "",
+        "--- RISPOSTA ORIGINALE ---",
+        card.definition or "(vuota)",
+        "",
+        "--- RISPOSTA CORRETTA ---",
+        d_new or "(vuota)",
+    ]
+    if note.strip():
+        lines += ["", "--- NOTE ---", note.strip()]
+    lines.append(sep + "\n")
+    with open(report_path, "a", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    return report_path
+
+
 def fc_render_study_session():
     all_cards: List[FlashCard] = st.session_state.fc_cards
     conosco_set = set(st.session_state.fc_conosco)
@@ -2998,7 +3222,9 @@ def fc_render_study_session():
             try:
                 file_stem = safe_name(Path(st.session_state.fc_file_name).stem)
                 save_flashcard_session(client, cloud_settings, st.session_state.fc_subject, file_stem,
-                    {"conosco": st.session_state.fc_conosco, "da_studiare": st.session_state.fc_da_studiare})
+                    {"conosco": st.session_state.fc_conosco,
+                     "da_studiare": st.session_state.fc_da_studiare,
+                     "correzioni": st.session_state.get("fc_correzioni", {})})
                 st.success("✅ Sessione salvata nel cloud. Torno alla home...")
                 # Torna alla home dopo 1 secondo
                 import time
@@ -3119,14 +3345,17 @@ if selected_tab == "flashcard":
                                             cards = flashcards_from_json(cloud_download_bytes(client, cloud_settings["bucket"], path))
                                         else:
                                             cards, _ = load_flashcard_from_cloud(client, cloud_settings, fc_cloud_subj, cf_name, media_dir)
+                                        stato = load_flashcard_session(client, cloud_settings, fc_cloud_subj, safe_name(Path(cf_name).stem))
+                                        correzioni = stato.get("correzioni", {})
+                                        _apply_correzioni(cards, correzioni)
                                         st.session_state.fc_cards = cards
                                         st.session_state.fc_file_name = cf_name
                                         st.session_state.fc_subject = fc_cloud_subj
                                         st.session_state.fc_flipped = {}
                                         st.session_state.fc_prove_risposte = {}
-                                        stato = load_flashcard_session(client, cloud_settings, fc_cloud_subj, safe_name(Path(cf_name).stem))
                                         st.session_state.fc_conosco = stato.get("conosco", [])
                                         st.session_state.fc_da_studiare = stato.get("da_studiare", [])
+                                        st.session_state.fc_correzioni = correzioni
                                         st.rerun()
                                     except Exception as exc:
                                         st.error(f"Errore: {exc}")
@@ -3159,18 +3388,22 @@ if selected_tab == "flashcard":
                         if not cards:
                             st.error("Nessuna flashcard trovata.")
                         else:
+                            if cloud_ready:
+                                stato = load_flashcard_session(client, cloud_settings, fc_file_subj, safe_name(Path(fc_upload.name).stem))
+                                correzioni = stato.get("correzioni", {})
+                                _apply_correzioni(cards, correzioni)
+                                st.session_state.fc_conosco = stato.get("conosco", [])
+                                st.session_state.fc_da_studiare = stato.get("da_studiare", [])
+                                st.session_state.fc_correzioni = correzioni
+                            else:
+                                st.session_state.fc_conosco = []
+                                st.session_state.fc_da_studiare = []
+                                st.session_state.fc_correzioni = {}
                             st.session_state.fc_cards = cards
                             st.session_state.fc_file_name = fc_upload.name
                             st.session_state.fc_subject = fc_file_subj
                             st.session_state.fc_flipped = {}
                             st.session_state.fc_prove_risposte = {}
-                            if cloud_ready:
-                                stato = load_flashcard_session(client, cloud_settings, fc_file_subj, safe_name(Path(fc_upload.name).stem))
-                                st.session_state.fc_conosco = stato.get("conosco", [])
-                                st.session_state.fc_da_studiare = stato.get("da_studiare", [])
-                            else:
-                                st.session_state.fc_conosco = []
-                                st.session_state.fc_da_studiare = []
                             st.success(f"Caricate {len(cards)} flashcard.")
                             st.rerun()
                     except Exception as exc:
@@ -3182,14 +3415,17 @@ if selected_tab == "flashcard":
                         upload_flashcard_file(client, cloud_settings, fc_file_subj, fc_upload)
                         cards, _ = parse_flashcard_bytes(fc_upload.getvalue(), fc_upload.name, media_dir)
                         if cards:
+                            stato = load_flashcard_session(client, cloud_settings, fc_file_subj, safe_name(Path(fc_upload.name).stem))
+                            correzioni = stato.get("correzioni", {})
+                            _apply_correzioni(cards, correzioni)
                             st.session_state.fc_cards = cards
                             st.session_state.fc_file_name = fc_upload.name
                             st.session_state.fc_subject = fc_file_subj
                             st.session_state.fc_flipped = {}
                             st.session_state.fc_prove_risposte = {}
-                            stato = load_flashcard_session(client, cloud_settings, fc_file_subj, safe_name(Path(fc_upload.name).stem))
                             st.session_state.fc_conosco = stato.get("conosco", [])
                             st.session_state.fc_da_studiare = stato.get("da_studiare", [])
+                            st.session_state.fc_correzioni = correzioni
                             st.success(f"Caricate {len(cards)} flashcard.")
                             st.rerun()
                     except Exception as exc:
@@ -3219,6 +3455,72 @@ if st.checkbox("Mostra DEBUG - Cloud"):
                 st.error(f"Errore nel leggere i file: {e}")
     except Exception as e:
         st.error(f"Errore nel caricamento config: {e}")
+
+# ------------------------------------------------------------------
+# DA RIVEDERE
+# ------------------------------------------------------------------
+if selected_tab == "da_rivedere":
+    st.subheader("📌 Da rivedere")
+
+    if not cloud_ready:
+        st.warning("Connetti il cloud per usare questa sezione.")
+    else:
+        dr_items = load_da_rivedere(client, cloud_settings)
+
+        if not dr_items:
+            st.info("Nessuna domanda salvata. Durante un quiz, premi ☆ accanto a una domanda per aggiungerla qui.")
+        else:
+            st.write(f"**{len(dr_items)} domande** da rivedere, provenienti da diversi file.")
+
+            # Bottone per fare il quiz su tutte le domande salvate
+            if st.button("▶️ Fai il quiz su queste domande", type="primary"):
+                dr_quiz = []
+                for idx, item in enumerate(dr_items):
+                    dr_quiz.append(QuizQuestion(
+                        number=str(idx + 1),
+                        question=item["question"],
+                        options=item.get("options", []),
+                        correct_index=item.get("correct_index"),
+                        notes=item.get("notes", ""),
+                        images=[],
+                    ))
+                source_label = f"Da rivedere ({len(dr_quiz)} domande)"
+                start_original_quiz(dr_quiz, "Da rivedere", source_label)
+                st.session_state.requested_tab = "quiz"
+                st.rerun()
+
+            st.divider()
+
+            # Lista con anteprima e bottone rimozione per ogni domanda
+            for idx, item in enumerate(dr_items):
+                with st.expander(
+                    f"**{idx+1}.** {item['question'][:80]}{'…' if len(item['question'])>80 else ''}",
+                    expanded=False,
+                ):
+                    st.write(item["question"])
+                    for oi, opt in enumerate(item.get("options", [])):
+                        prefix = "✅ " if oi == item.get("correct_index") else f"{LETTERS[oi]}. "
+                        st.write(prefix + opt)
+                    st.caption(
+                        f"📁 {item.get('subject','?')} · {item.get('source_file','?')} · {item.get('ts','?')}"
+                    )
+                    if item.get("notes"):
+                        st.info("📝 " + item["notes"])
+
+                    if st.button("🗑️ Rimuovi", key=f"dr_remove_{idx}"):
+                        dr_items.pop(idx)
+                        save_da_rivedere(client, cloud_settings, dr_items)
+                        st.session_state.pop("dr_keys_loaded", None)
+                        st.toast("Rimossa da 'Da rivedere'")
+                        st.rerun()
+
+            st.divider()
+            if st.button("🗑️ Svuota tutta la lista", type="secondary"):
+                save_da_rivedere(client, cloud_settings, [])
+                st.session_state.dr_keys_cache = set()
+                st.session_state.pop("dr_keys_loaded", None)
+                st.rerun()
+
 
 st.divider()
 
