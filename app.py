@@ -1040,7 +1040,14 @@ def select_quiz_by_mode(
         return merge_unique_questions(previous_wrong, clean_unanswered)
 
     if mode == "Tutte":
-        return list(original_quiz)
+        # original_quiz per primo: ha priorità nella deduplicazione.
+        # previous_* aggiunge domande da sessioni salvate non più presenti nel file.
+        return merge_unique_questions(
+            original_quiz,
+            previous_correct,
+            previous_wrong,
+            previous_unanswered,
+        )
 
     return merge_unique_questions(previous_unanswered)
 
