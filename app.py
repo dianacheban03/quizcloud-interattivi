@@ -1040,14 +1040,7 @@ def select_quiz_by_mode(
         return merge_unique_questions(previous_wrong, clean_unanswered)
 
     if mode == "Tutte":
-        # original_quiz per primo: ha priorità nella deduplicazione.
-        # previous_* aggiunge domande da sessioni salvate non più presenti nel file.
-        return merge_unique_questions(
-            original_quiz,
-            previous_correct,
-            previous_wrong,
-            previous_unanswered,
-        )
+        return list(original_quiz)
 
     return merge_unique_questions(previous_unanswered)
 
@@ -2735,11 +2728,12 @@ if selected_tab == "quiz":
 
         if launch_quiz:
             if st.session_state.quiz_mode == "Tutte":
-                # Reset completo: ricomincia da zero ignorando lo storico
+                # Reset completo: ricomincia da zero con solo le domande originali,
+                # senza aggiungere nulla dallo storico salvato (evita duplicati)
+                selected = list(st.session_state.original_quiz)
                 st.session_state.previous_correct = []
                 st.session_state.previous_wrong = []
-                st.session_state.previous_unanswered = list(st.session_state.original_quiz)
-                selected = list(st.session_state.original_quiz)
+                st.session_state.previous_unanswered = selected
             else:
                 selected = select_quiz_by_mode(
                     st.session_state.quiz_mode,
