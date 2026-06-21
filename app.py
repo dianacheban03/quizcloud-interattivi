@@ -332,6 +332,11 @@ QUESTION_START_RE = re.compile(
     """,
     re.IGNORECASE | re.VERBOSE
 )
+# "Domanda 1" / "Quesito 3" senza separatore dopo il numero
+QUESTION_HEADER_RE = re.compile(
+    r"^\s*(?:domanda|quesito|question)\s+(?P<num>\d{1,3})\s*$",
+    re.IGNORECASE
+)
 
 OPTION_RE = re.compile(
     r"""^\s*
@@ -403,7 +408,7 @@ def split_questions(text: str) -> List[Tuple[str, int, int]]:
     starts = []
 
     for i, line in enumerate(lines):
-        if QUESTION_START_RE.match(line):
+        if QUESTION_START_RE.match(line) or QUESTION_HEADER_RE.match(line):
             starts.append(i)
 
     # Fallback: se non trova numerazione, prova a usare le righe che finiscono con ?
@@ -428,9 +433,13 @@ def parse_question_block(block: str) -> Optional[QuizQuestion]:
 
     first = lines[0]
     m = QUESTION_START_RE.match(first)
+    mh = QUESTION_HEADER_RE.match(first)
     if m:
         number = m.group("num")
         first_question_text = QUESTION_START_RE.sub("", first).strip()
+    elif mh:
+        number = mh.group("num")
+        first_question_text = ""  # "Domanda 1" è solo intestazione, testo viene dopo
     else:
         number = str(abs(hash(first)) % 100000)
         first_question_text = first
@@ -454,6 +463,16 @@ def parse_question_block(block: str) -> Optional[QuizQuestion]:
             else:
                 # Riga continuazione domanda
                 question_lines.append(line)
+
+    # Opzioni senza prefisso lettera: auto-assegna A B C D E alle ultime righe
+    if not options_dict and len(question_lines) >= 3:
+        # La prima riga è sempre testo domanda; le successive sono le opzioni
+        n_opts = min(6, len(question_lines) - 1)
+        if n_opts >= 2:
+            opt_lines = question_lines[-n_opts:]
+            question_lines = question_lines[:-n_opts]
+            for i, opt_text in enumerate(opt_lines):
+                options_dict[LETTERS[i]] = opt_text
 
     if not options_dict:
         return None
