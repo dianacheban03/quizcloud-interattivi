@@ -1607,6 +1607,7 @@ def start_original_quiz(
     st.session_state.active_session_folder = make_session_folder_name(quiz_name)
     st.session_state.loaded_from_session = False
     st.session_state.quiz_mode = "Tutte"
+    st.session_state.quiz_session_id = st.session_state.get("quiz_session_id", 0) + 1
     st.session_state.pop("dr_keys_loaded", None)  # forza ricarica cache "Da rivedere"
 
 
@@ -2082,6 +2083,7 @@ defaults = {
     "previous_unanswered": [],
     "answers": {},
     "editing_done": False,
+    "quiz_session_id": 0,
     "quiz_mode": "Non fatte",
     "active_subject": "",
     "active_quiz_name": "",
@@ -2767,6 +2769,7 @@ if selected_tab == "quiz":
                 st.session_state.quiz = selected
                 st.session_state.answers = {}
                 st.session_state.editing_done = True
+                st.session_state.quiz_session_id += 1
                 st.rerun()
 
         quiz: List[QuizQuestion] = st.session_state.quiz
@@ -2804,6 +2807,7 @@ if selected_tab == "quiz":
                     pass
                 st.session_state.dr_keys_loaded = True
 
+            _sid = st.session_state.quiz_session_id
             for i, q in enumerate(quiz):
                 _q_key = stable_question_key(q)
                 _already_saved = _q_key in st.session_state.dr_keys_cache
@@ -2818,7 +2822,7 @@ if selected_tab == "quiz":
                 with _pin_col:
                     _pin_label = "📌" if _already_saved else "☆"
                     _pin_help = "Già in 'Da rivedere'" if _already_saved else "Aggiungi a 'Da rivedere'"
-                    if st.button(_pin_label, key=f"pin_{i}", help=_pin_help,
+                    if st.button(_pin_label, key=f"pin_{i}_{_sid}", help=_pin_help,
                                  disabled=_already_saved or not cloud_ready):
                         _subject_now = st.session_state.get("selected_subject", "")
                         _file_now = st.session_state.get("selected_quiz_name", "")
@@ -2826,7 +2830,6 @@ if selected_tab == "quiz":
                         if _added:
                             st.session_state.dr_keys_cache.add(_q_key)
                             st.toast("📌 Aggiunta a 'Da rivedere'")
-                        st.rerun()
 
                 st.write(q.question)
 
@@ -2848,7 +2851,7 @@ if selected_tab == "quiz":
                     format_func=lambda idx, q=q: (
                         f"{LETTERS[idx]}. {q.options[idx]}"
                     ),
-                    key=f"answer_{i}",
+                    key=f"answer_{i}_{_sid}",
                     index=_saved_answer,
                 )
 
@@ -2880,12 +2883,12 @@ if selected_tab == "quiz":
                     new_note = st.text_area(
                         "Nota",
                         value=q.notes,
-                        key=f"note_{i}",
+                        key=f"note_{i}_{_sid}",
                         placeholder="Es: ricordati che... / errore comune...",
                         label_visibility="collapsed",
                         height=100,
                     )
-                    if st.button("Salva nota", key=f"save_note_{i}"):
+                    if st.button("Salva nota", key=f"save_note_{i}_{_sid}"):
                         quiz[i].notes = new_note
                         for orig_q in st.session_state.original_quiz:
                             if orig_q.number == q.number:
@@ -2895,10 +2898,10 @@ if selected_tab == "quiz":
                     st.divider()
 
                     # ── Sezione modifica (espandibile con un secondo pulsante) ──
-                    if st.button("✏️ Modifica domanda / risposte", key=f"toggle_edit_{i}"):
-                        st.session_state[f"show_edit_{i}"] = not st.session_state.get(f"show_edit_{i}", False)
+                    if st.button("✏️ Modifica domanda / risposte", key=f"toggle_edit_{i}_{_sid}"):
+                        st.session_state[f"show_edit_{i}_{_sid}"] = not st.session_state.get(f"show_edit_{i}_{_sid}", False)
 
-                    if st.session_state.get(f"show_edit_{i}", False):
+                    if st.session_state.get(f"show_edit_{i}_{_sid}", False):
                         st.caption("**Modifica testo domanda**")
                         new_question = st.text_area(
                             "Domanda",
@@ -2966,10 +2969,10 @@ if selected_tab == "quiz":
                             range(len(q.options)),
                             index=q.correct_index if q.correct_index is not None else 0,
                             format_func=lambda idx, q=q: f"{LETTERS[idx]}. {q.options[idx][:60]}",
-                            key=f"fix_correct_{i}",
+                            key=f"fix_correct_{i}_{_sid}",
                             label_visibility="collapsed",
                         )
-                        if st.button("Applica soluzione", key=f"apply_correct_{i}"):
+                        if st.button("Applica soluzione", key=f"apply_correct_{i}_{_sid}"):
                             quiz[i].correct_index = new_correct
                             for orig_q in st.session_state.original_quiz:
                                 if orig_q.number == q.number:
