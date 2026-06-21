@@ -2734,13 +2734,20 @@ if selected_tab == "quiz":
         launch_quiz = st.button("▶ Avvia modalità scelta", type="primary", width='stretch')
 
         if launch_quiz:
-            selected = select_quiz_by_mode(
-                st.session_state.quiz_mode,
-                st.session_state.original_quiz,
-                st.session_state.previous_correct,
-                st.session_state.previous_wrong,
-                st.session_state.previous_unanswered,
-            )
+            if st.session_state.quiz_mode == "Tutte":
+                # Reset completo: ricomincia da zero ignorando lo storico
+                st.session_state.previous_correct = []
+                st.session_state.previous_wrong = []
+                st.session_state.previous_unanswered = list(st.session_state.original_quiz)
+                selected = list(st.session_state.original_quiz)
+            else:
+                selected = select_quiz_by_mode(
+                    st.session_state.quiz_mode,
+                    st.session_state.original_quiz,
+                    st.session_state.previous_correct,
+                    st.session_state.previous_wrong,
+                    st.session_state.previous_unanswered,
+                )
             if not selected:
                 st.warning(f'Non ci sono domande nella modalità "{st.session_state.quiz_mode}".')
             else:
