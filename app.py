@@ -2756,9 +2756,16 @@ if selected_tab == "quiz":
         launch_quiz = st.button("▶ Avvia modalità scelta", type="primary", width='stretch')
 
         if launch_quiz:
+            # Prima di cambiare modalità, incorpora sempre le risposte della
+            # sessione corrente nello storico (evita che domande già risposte
+            # riappaiano in "Non fatte" dopo un cambio modalità senza salvataggio).
+            _pre_cc, _pre_cw, _pre_cu = current_combined_state()
+            st.session_state.previous_correct = _pre_cc
+            st.session_state.previous_wrong = _pre_cw
+            st.session_state.previous_unanswered = _pre_cu
+
             if st.session_state.quiz_mode == "Tutte":
-                # Reset completo: ricomincia da zero con solo le domande originali,
-                # senza aggiungere nulla dallo storico salvato (evita duplicati)
+                # Reset completo: ricomincia da zero con solo le domande originali.
                 selected = list(st.session_state.original_quiz)
                 st.session_state.previous_correct = []
                 st.session_state.previous_wrong = []
@@ -2767,9 +2774,9 @@ if selected_tab == "quiz":
                 selected = select_quiz_by_mode(
                     st.session_state.quiz_mode,
                     st.session_state.original_quiz,
-                    st.session_state.previous_correct,
-                    st.session_state.previous_wrong,
-                    st.session_state.previous_unanswered,
+                    _pre_cc,
+                    _pre_cw,
+                    _pre_cu,
                 )
             if not selected:
                 st.warning(f'Non ci sono domande nella modalità "{st.session_state.quiz_mode}".')
