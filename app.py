@@ -3544,61 +3544,94 @@ if selected_tab == "da_rivedere":
     if not cloud_ready:
         st.warning("Connetti il cloud per usare questa sezione.")
     else:
-        dr_items = load_da_rivedere(client, cloud_settings)
+        dr_items_all = load_da_rivedere(client, cloud_settings)
 
-        if not dr_items:
+        if not dr_items_all:
             st.info("Nessuna domanda salvata. Durante un quiz, premi ☆ accanto a una domanda per aggiungerla qui.")
         else:
-            st.write(f"**{len(dr_items)} domande** da rivedere, provenienti da diversi file.")
+            # Filtro per materia — default sulla materia corrente
+            _dr_subjects_present = sorted({item.get("subject", "") for item in dr_items_all if item.get("subject")})
+            _dr_current_subject = st.session_state.get("selected_subject", "")
+            _dr_filter_options = ["Tutte le materie"] + _dr_subjects_present
+            _dr_default_idx = 0
+            if _dr_current_subject in _dr_subjects_present:
+                _dr_default_idx = _dr_filter_options.index(_dr_current_subject)
+            _dr_filter = st.selectbox(
+                "Filtra per materia",
+                _dr_filter_options,
+                index=_dr_default_idx,
+                key="dr_subject_filter",
+            )
 
-            # Bottone per fare il quiz su tutte le domande salvate
-            if st.button("▶️ Fai il quiz su queste domande", type="primary"):
-                dr_quiz = []
-                for idx, item in enumerate(dr_items):
-                    dr_quiz.append(QuizQuestion(
-                        number=str(idx + 1),
-                        question=item["question"],
-                        options=item.get("options", []),
-                        correct_index=item.get("correct_index"),
-                        notes=item.get("notes", ""),
-                        images=[],
-                    ))
-                source_label = f"Da rivedere ({len(dr_quiz)} domande)"
-                start_original_quiz(dr_quiz, "Da rivedere", source_label)
-                st.session_state.requested_tab = "quiz"
-                st.rerun()
+            if _dr_filter == "Tutte le materie":
+                dr_items = dr_items_all
+            else:
+                dr_items = [it for it in dr_items_all if it.get("subject") == _dr_filter]
 
-            st.divider()
+            if not dr_items:
+                st.info(f"Nessuna domanda da rivedere per **{_dr_filter}**.")
+            else:
+                st.write(f"**{len(dr_items)} domande** da rivedere{' in ' + _dr_filter if _dr_filter != 'Tutte le materie' else ''}.")
 
-            # Lista con anteprima e bottone rimozione per ogni domanda
-            for idx, item in enumerate(dr_items):
-                with st.expander(
-                    f"**{idx+1}.** {item['question'][:80]}{'…' if len(item['question'])>80 else ''}",
-                    expanded=False,
-                ):
-                    st.write(item["question"])
-                    for oi, opt in enumerate(item.get("options", [])):
-                        prefix = "✅ " if oi == item.get("correct_index") else f"{LETTERS[oi]}. "
-                        st.write(prefix + opt)
-                    st.caption(
-                        f"📁 {item.get('subject','?')} · {item.get('source_file','?')} · {item.get('ts','?')}"
-                    )
-                    if item.get("notes"):
-                        st.info("📝 " + item["notes"])
+                # Bottone per fare il quiz sulle domande filtrate
+                if st.button("▶️ Fai il quiz su queste domande", type="primary"):
+                    dr_quiz = []
+                    for idx, item in enumerate(dr_items):
+                        dr_quiz.append(QuizQuestion(
+                            number=str(idx + 1),
+                            question=item["question"],
+                            options=item.get("options", []),
+                            correct_index=item.get("correct_index"),
+                            notes=item.get("notes", ""),
+                            images=[],
+                        ))
+                    _dr_label = _dr_filter if _dr_filter != "Tutte le materie" else "Da rivedere"
+                    source_label = f"{_dr_label} ({len(dr_quiz)} domande)"
+                    start_original_quiz(dr_quiz, _dr_label, source_label)
+                    st.session_state.requested_tab = "quiz"
+                    st.rerun()
 
-                    if st.button("🗑️ Rimuovi", key=f"dr_remove_{idx}"):
-                        dr_items.pop(idx)
-                        save_da_rivedere(client, cloud_settings, dr_items)
+                st.divider()
+
+                # Lista con anteprima e bottone rimozione per ogni domanda
+                # Usiamo l'indice globale (in dr_items_all) per rimuovere correttamente
+                for disp_idx, item in enumerate(dr_items):
+                    with st.expander(
+                        f"**{disp_idx+1}.** {item['question'][:80]}{'…' if len(item['question'])>80 else ''}",
+                        expanded=False,
+                    ):
+                        st.write(item["question"])
+                        for oi, opt in enumerate(item.get("options", [])):
+                            prefix = "✅ " if oi == item.get("correct_index") else f"{LETTERS[oi]}. "
+                            st.write(prefix + opt)
+                        st.caption(
+                            f"📁 {item.get('subject','?')} · {item.get('source_file','?')} · {item.get('ts','?')}"
+                        )
+                        if item.get("notes"):
+                            st.info("📝 " + item["notes"])
+
+                        if st.button("🗑️ Rimuovi", key=f"dr_remove_{disp_idx}"):
+                            _item_key = item.get("_key")
+                            dr_items_all[:] = [it for it in dr_items_all if it.get("_key") != _item_key]
+                            save_da_rivedere(client, cloud_settings, dr_items_all)
+                            st.session_state.pop("dr_keys_loaded", None)
+                            st.toast("Rimossa da 'Da rivedere'")
+                            st.rerun()
+
+                st.divider()
+                if _dr_filter == "Tutte le materie":
+                    if st.button("🗑️ Svuota tutta la lista", type="secondary"):
+                        save_da_rivedere(client, cloud_settings, [])
+                        st.session_state.dr_keys_cache = set()
                         st.session_state.pop("dr_keys_loaded", None)
-                        st.toast("Rimossa da 'Da rivedere'")
                         st.rerun()
-
-            st.divider()
-            if st.button("🗑️ Svuota tutta la lista", type="secondary"):
-                save_da_rivedere(client, cloud_settings, [])
-                st.session_state.dr_keys_cache = set()
-                st.session_state.pop("dr_keys_loaded", None)
-                st.rerun()
+                else:
+                    if st.button(f"🗑️ Svuota '{_dr_filter}'", type="secondary"):
+                        _remaining = [it for it in dr_items_all if it.get("subject") != _dr_filter]
+                        save_da_rivedere(client, cloud_settings, _remaining)
+                        st.session_state.dr_keys_cache = {it["_key"] for it in _remaining if "_key" in it}
+                        st.session_state.pop("dr_keys_loaded", None)
+                        st.rerun()
 
 
 st.divider()
