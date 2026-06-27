@@ -3066,22 +3066,6 @@ if selected_tab == "quiz":
                     "Il backup ZIP resta comunque disponibile."
                 )
 
-            # Pulsante per rifare solo le domande sbagliate (mantenendo note e immagini)
-            if combined_wrong:
-                st.divider()
-                st.markdown("### 🔁 Rivedi gli errori")
-                st.caption(f"Hai {len(combined_wrong)} domande sbagliate in questa sessione.")
-                if st.button(
-                    f"🔁 Rifai le {len(combined_wrong)} domande sbagliate",
-                    type="secondary",
-                    width='stretch',
-                ):
-                    st.session_state.quiz = list(combined_wrong)
-                    st.session_state.answers = {}
-                    st.session_state.editing_done = True
-                    st.session_state.quiz_session_id += 1
-                    st.rerun()
-
 # ------------------------------------------------------------------
 # FLASHCARD TAB
 # ------------------------------------------------------------------
