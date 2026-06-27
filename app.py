@@ -1467,14 +1467,14 @@ def get_quiz_status(client, settings, subject, file_name):
         sbagliate = stats["sbagliate"]
         non_fatte = stats["non_fatte"]
 
-        if corrette == 0 and sbagliate == 0:
+        if corrette == 0 and sbagliate == 0 and non_fatte == 0:
             return "⚪"
-
-        if sbagliate > 0:
-            return "🔴"
 
         if non_fatte > 0:
             return "🟡"
+
+        if sbagliate > 0:
+            return "🔴"
 
         return "🟢"
 
@@ -2111,6 +2111,12 @@ for key, value in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
+# Ripristina l'ultima materia dai query params (persiste tra refresh)
+if not st.session_state.selected_subject:
+    _qp_subj = st.query_params.get("subject", "")
+    if _qp_subj:
+        st.session_state.selected_subject = _qp_subj
+
 work_dir = Path(st.session_state.work_dir)
 media_dir = work_dir / "media"
 media_dir.mkdir(parents=True, exist_ok=True)
@@ -2441,6 +2447,7 @@ if selected_tab == "cloud":
                 ),
             )
             st.session_state.selected_subject = selected_subject
+            st.query_params["subject"] = selected_subject  # persiste nei refresh
 
             st.markdown(
                 f'<div class="cloud-path">☁️ / {selected_subject}</div>',
@@ -2637,6 +2644,7 @@ Il numero con il punto è obbligatorio. Il `---` su una riga da sola separa doma
                                     st.session_state.fc_conosco = stato.get("conosco", [])
                                     st.session_state.fc_da_studiare = stato.get("da_studiare", [])
                                     st.session_state.fc_correzioni = correzioni
+                                    st.session_state.pop("fc_filter_radio", None)  # reset filtro a "Tutte"
                                     st.session_state.requested_tab = "flashcard"
                                     st.success(f"Caricate {len(cards)} flashcard.")
                                     st.rerun()
@@ -3027,12 +3035,10 @@ if selected_tab == "quiz":
                         )
                         st.session_state.previous_correct = combined_correct
                         st.session_state.previous_wrong = combined_wrong
-                        st.session_state.previous_unanswered = (
-                            combined_unanswered
-                        )
-                        st.success(
-                            "Sessione aggiornata nella stessa cartella cloud."
-                        )
+                        st.session_state.previous_unanswered = combined_unanswered
+                        st.toast("✅ Sessione salvata nel cloud!")
+                        st.session_state.requested_tab = "cloud"
+                        st.rerun()
                     except Exception as exc:
                         st.error(f"Salvataggio non riuscito: {exc}")
 
@@ -3059,6 +3065,22 @@ if selected_tab == "quiz":
                     "Configura il cloud per salvare senza dipendere dal PC. "
                     "Il backup ZIP resta comunque disponibile."
                 )
+
+            # Pulsante per rifare solo le domande sbagliate (mantenendo note e immagini)
+            if combined_wrong:
+                st.divider()
+                st.markdown("### 🔁 Rivedi gli errori")
+                st.caption(f"Hai {len(combined_wrong)} domande sbagliate in questa sessione.")
+                if st.button(
+                    f"🔁 Rifai le {len(combined_wrong)} domande sbagliate",
+                    type="secondary",
+                    width='stretch',
+                ):
+                    st.session_state.quiz = list(combined_wrong)
+                    st.session_state.answers = {}
+                    st.session_state.editing_done = True
+                    st.session_state.quiz_session_id += 1
+                    st.rerun()
 
 # ------------------------------------------------------------------
 # FLASHCARD TAB
@@ -3241,6 +3263,43 @@ def fc_render_study_session():
                             st.session_state.fc_flipped[card_key] = False
                             st.rerun()
 
+            # Modifica inline della carta (visibile direttamente, non solo in sidebar)
+            with st.expander("✏️ Modifica questa carta"):
+                _qe = st.text_area(
+                    "Domanda",
+                    value=card.question or "",
+                    key=f"inline_edit_q_{card.number}",
+                    height=80,
+                )
+                _de = st.text_area(
+                    "Risposta",
+                    value=card.definition or "",
+                    key=f"inline_edit_d_{card.number}",
+                    height=80,
+                )
+                if st.button("💾 Salva modifica", key=f"inline_edit_save_{card.number}"):
+                    card.question = _qe.strip()
+                    card.definition = _de.strip()
+                    import datetime as _dt2
+                    _ts2 = _dt2.datetime.now().strftime("%Y-%m-%d %H:%M")
+                    st.session_state.fc_correzioni[str(card.number)] = {
+                        "q": _qe.strip(), "d": _de.strip(),
+                        "tipo": "Testo domanda/risposta", "note": "", "ts": _ts2,
+                    }
+                    if cloud_ready and st.session_state.get("fc_file_name"):
+                        try:
+                            _stem2 = safe_name(Path(st.session_state.fc_file_name).stem)
+                            save_flashcard_session(
+                                client, cloud_settings,
+                                st.session_state.fc_subject, _stem2,
+                                {"conosco": st.session_state.fc_conosco,
+                                 "da_studiare": st.session_state.fc_da_studiare,
+                                 "correzioni": st.session_state.fc_correzioni},
+                            )
+                        except Exception:
+                            pass
+                    st.rerun()
+
             st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
@@ -3385,6 +3444,7 @@ if selected_tab == "flashcard":
                                         st.session_state.fc_conosco = stato.get("conosco", [])
                                         st.session_state.fc_da_studiare = stato.get("da_studiare", [])
                                         st.session_state.fc_correzioni = correzioni
+                                        st.session_state.pop("fc_filter_radio", None)
                                         st.rerun()
                                     except Exception as exc:
                                         st.error(f"Errore: {exc}")
@@ -3433,6 +3493,7 @@ if selected_tab == "flashcard":
                             st.session_state.fc_subject = fc_file_subj
                             st.session_state.fc_flipped = {}
                             st.session_state.fc_prove_risposte = {}
+                            st.session_state.pop("fc_filter_radio", None)
                             st.success(f"Caricate {len(cards)} flashcard.")
                             st.rerun()
                     except Exception as exc:
@@ -3455,6 +3516,7 @@ if selected_tab == "flashcard":
                             st.session_state.fc_conosco = stato.get("conosco", [])
                             st.session_state.fc_da_studiare = stato.get("da_studiare", [])
                             st.session_state.fc_correzioni = correzioni
+                            st.session_state.pop("fc_filter_radio", None)
                             st.success(f"Caricate {len(cards)} flashcard.")
                             st.rerun()
                     except Exception as exc:
