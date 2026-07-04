@@ -348,9 +348,29 @@ OPTION_RE = re.compile(
 )
 
 ANSWER_KEY_PATTERNS = [
+    # "1. Risposta corretta: A" / "1) Correct answer: B"
+    re.compile(r"(?P<num>\d{1,3})\s*[\.\)\:\-]?\s*(?:risposta\s+corretta|correct\s+answer|risposta|answer|soluzione)\s*[:\-]\s*(?P<letter>[A-Fa-f])\b", re.I),
     re.compile(r"(?P<num>\d{1,3})\s*[\.\)\:\-]\s*(?P<letter>[A-Fa-f])\b"),
     re.compile(r"(?:domanda|quesito|question|q)\s*(?P<num>\d{1,3})\s*[:\-]?\s*(?P<letter>[A-Fa-f])\b", re.I),
 ]
+
+# Riga che segna l'inizio della sezione soluzioni (paragrafo a sé stante)
+SOLUTION_HEADER_RE = re.compile(
+    r"^\s*(?:soluzioni|soluzione|solutions?|answer\s*key|risposte|correzione)\s*[:\-]?\s*$",
+    re.IGNORECASE,
+)
+
+# Riga di soluzione: "1. Risposta corretta: A" oppure "1. A"
+SOLUTION_LINE_RE = re.compile(
+    r"""^\s*(?P<num>\d{1,3})\s*[\.\)\:\-]?\s*
+    (?:
+        (?:risposta\s+corretta|correct\s+answer|risposta|answer|soluzione)\s*[:\-]?\s*(?P<letter1>[A-Fa-f])\b
+        |
+        (?P<letter2>[A-Fa-f])\s*[\.\)]?\s*$
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
 
 
 def parse_answer_key(text: str) -> Dict[str, int]:
@@ -382,18 +402,20 @@ def parse_answer_key(text: str) -> Dict[str, int]:
 
     search_area = text[start:] if start != -1 else text[-4000:]
 
+    # I pattern sono in ordine di specificità: il primo che trova un numero vince
+    # (non sovrascrivere con pattern più generici, che possono dare falsi match).
     for pattern in ANSWER_KEY_PATTERNS:
         for m in pattern.finditer(search_area):
             num = m.group("num").strip()
             idx = option_letter_to_index(m.group("letter"))
-            if idx is not None:
+            if idx is not None and num not in answer_key:
                 answer_key[num] = idx
 
     # Formato compatto: 1B 2C 3A
     for m in re.finditer(r"\b(?P<num>\d{1,3})\s*(?P<letter>[A-Fa-f])\b", search_area):
         num = m.group("num")
         idx = option_letter_to_index(m.group("letter"))
-        if idx is not None:
+        if idx is not None and num not in answer_key:
             answer_key[num] = idx
 
     return answer_key
@@ -553,6 +575,12 @@ def parse_docx_quiz_direct(uploaded_file, out_dir: Path) -> Tuple[List[QuizQuest
     current_option_index: Optional[int] = None
     img_counter = 1
 
+    # Stato per la sezione soluzioni: "N. Risposta corretta: X" + spiegazione
+    in_solutions = False
+    sol_answers: Dict[str, int] = {}
+    sol_notes: Dict[str, List[str]] = {}
+    last_sol_num: Optional[str] = None
+
     source_name = getattr(uploaded_file, "name", "documento.docx")
     source_hash = hashlib.sha1(source_name.encode("utf-8")).hexdigest()[:8]
     source_prefix = f"{safe_name(Path(source_name).stem)}_{source_hash}"
@@ -566,6 +594,28 @@ def parse_docx_quiz_direct(uploaded_file, out_dir: Path) -> Tuple[List[QuizQuest
 
             if block_text:
                 raw_lines.append(block_text)
+
+                # Inizio sezione soluzioni: chiudi la domanda corrente e
+                # smetti di interpretare i paragrafi come domande/opzioni.
+                if not in_solutions and SOLUTION_HEADER_RE.match(block_text):
+                    flush_current_question(current, quiz)
+                    current = None
+                    current_option_index = None
+                    in_solutions = True
+                    continue
+
+                if in_solutions:
+                    sol_m = SOLUTION_LINE_RE.match(block_text)
+                    if sol_m:
+                        last_sol_num = sol_m.group("num").strip()
+                        _letter = sol_m.group("letter1") or sol_m.group("letter2")
+                        _idx = option_letter_to_index(_letter)
+                        if _idx is not None:
+                            sol_answers[last_sol_num] = _idx
+                    elif last_sol_num is not None:
+                        # Spiegazione sotto la soluzione → nota della domanda
+                        sol_notes.setdefault(last_sol_num, []).append(block_text)
+                    continue
 
                 q_match = QUESTION_START_RE.match(block_text)
                 opt_match = OPTION_RE.match(block_text)
@@ -617,8 +667,14 @@ def parse_docx_quiz_direct(uploaded_file, out_dir: Path) -> Tuple[List[QuizQuest
     answer_key = parse_answer_key(full_text)
 
     for q in quiz:
-        if q.number in answer_key and answer_key[q.number] < len(q.options):
+        # Le soluzioni lette direttamente dalla sezione hanno priorità
+        if q.number in sol_answers and sol_answers[q.number] < len(q.options):
+            q.correct_index = sol_answers[q.number]
+        elif q.number in answer_key and answer_key[q.number] < len(q.options):
             q.correct_index = answer_key[q.number]
+        # Spiegazione della soluzione → note (senza sovrascrivere [NOTA] esistenti)
+        if not q.notes and q.number in sol_notes:
+            q.notes = " ".join(sol_notes[q.number]).strip()
 
     return quiz, full_text
 
